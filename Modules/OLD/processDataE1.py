@@ -402,7 +402,6 @@ def calcTTA(sessionDict):
 	return sessionDict
 
 
-
 def filterAndDiffSignals(sessionDict,analysisParameters):
 
 	sgWinSizeSamples = analysisParameters['sgWinSizeSamples']

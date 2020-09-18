@@ -1,0 +1,15 @@
+
+
+{
+
+    "analysisWindowStart": -500,
+    "analysisWindowEnd": -100,
+
+    "sgWinSizeSamples": 5,
+    "sgPolyorder": 3,
+
+    "medFiltSize": 5,
+    "interpResS": 0.001,
+    "filterParameters": [3,3]
+
+}
