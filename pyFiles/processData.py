@@ -765,16 +765,41 @@ def loadTemp():
     file.close()
     return sessionDict
 
-if __name__ == "__main__":
 
-    subNum = 0
+def processAllSesssions(doNotLoad=False):
 
-    rawDataDF = False
-    calibDF = False
+    dataFolderList = []
+    [dataFolderList.append(name) for name in os.listdir("Data/") if name[0] is not '.']
 
-    sessionDict = unpackSession(subNum, doNotLoad = True)
+    sessionFiles = []
+    for subNum in range(len(dataFolderList)):
+        sessionDict = processSingleSession(subNum,doNotLoad)
+        sessionDict['trialInfo']['subjectNumber'] = subNum
+        sessionFiles.append(sessionDict)
+
+    with open('sessionFiles.pickle', 'wb') as handle:        
+        pickle.dump(sessionFiles, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    allTrialDataDf = sessionFiles[0]['trialInfo']
+
+    for subNum in range(1,len(sessionFiles)):
+        allTrialDataDf = pd.concat([allTrialDataDf, sessionFiles[subNum]['trialInfo']])
+
+    with open('allTrialData.pickle', 'wb') as handle:
+        pickle.dump(allTrialDataDf, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
     
-    # Move to a json file
+    logger.info('Saved data to sessionFiles.pickle')
+    logger.info('Saved data to allTrialData.pickle')
+
+    return (sessionFiles,allTrialDataDf)
+
+def processSingleSession(subNum, doNotLoad=False):
+
+    # rawDataDF = False
+    # calibDF = False
+
+    sessionDict = unpackSession(subNum, doNotLoad)
     sessionDict = calcCatchingPlane(sessionDict)
     sessionDict = findLastFrame(sessionDict)
     sessionDict = calcCatchingError(sessionDict)
@@ -786,15 +811,25 @@ if __name__ == "__main__":
     sessionDict = calcTrackingError(sessionDict)
     sessionDict = filterAndDiffSignals(sessionDict)
     sessionDict = vectorMovementModel(sessionDict)
+    
     # sessionDict = calcCalibrationQuality(sessionDict,analysisParameters)
 
     # sessionDict = loadTemp()
     # saveTemp(sessionDict)
 
+    return sessionDict
+
+
+if __name__ == "__main__":
     
+    (sessionList,allTrialData) = processAllSesssions(doNotLoad=False)
+
     
     
 
+    
 
-    logger.info('***** Done! *****')
+    
+
+    
 

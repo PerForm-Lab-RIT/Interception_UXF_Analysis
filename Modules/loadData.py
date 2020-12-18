@@ -271,8 +271,6 @@ def unpackSession(subNum, gazeDataConfidenceThreshold = 0.6, doNotLoad = False):
     return dictOut
 
 
-
-
 # def compileSubData():
 
 #     rawDataDF = False
