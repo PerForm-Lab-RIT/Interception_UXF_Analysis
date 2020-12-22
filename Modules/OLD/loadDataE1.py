@@ -25,8 +25,6 @@ logger = logging.getLogger(__name__)
 # logging.basicConfig(level=logging.INFO, format=fmt)
 # logger = logging.getLogger(__name__)
 
-
-
 def initTrialInfo(sessionDf):
     '''
     Create a trial info dataframe with some basic settings

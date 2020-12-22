@@ -61,57 +61,35 @@ def convertIndexToMultiIndexIgnoringUnderscore(labelIn):
 
         return (labelIn,'')
         
-def processTrial(dataFolder, trialResults, gazeConfidenceThreshold, numTrials = False):
-
+def processTrial(dataFolder, trialResults, numTrials = False):
+    '''
+    This function loads in the raw gaze data for a trial and the raw unity data for a trial.
+    The Unity data is upsampled to match the higher gaze sample data for the trial.
+    THe return is a dictionary with:
+    - Raw gaze data (at the original, high sampling rate)
+    - Raw per-frame Unity data.
+    - The interpolated, or "processed" data.
+    '''
     if(numTrials):
         logger.info('Processing subject: ' + trialResults['ppid'] + ' t = ' + str(trialResults['trial_num']) + ' of ' + str(numTrials) )
     else:
         logger.info('Processing subject: ' + trialResults['ppid'] + ' t = ' + str(trialResults['trial_num']))
-
-
-    ## Import ball data and rename some columns
-    dataFileName = trialResults['ball_movement_filename']
-    ballData = pd.read_csv( dataFolder + dataFileName)
-    ballData = ballData.rename(columns={"time": "frameTime"})
-    ballData.rename(columns={"pos_x": "ballPos_x", "pos_y": "ballPos_y","pos_z": "ballPos_z"},inplace=True)
-    ballData.rename(columns={"rot_x": "ballRot_x", "rot_y": "ballRot_y","rot_z": "ballRot_z"},inplace=True)
-
-    ## Import paddle data and rename some columns
-    dataFileName = trialResults['paddle_movement_filename']
-    paddleData = pd.read_csv( dataFolder + dataFileName)
-    paddleData = paddleData.rename(columns={"time": "frameTime"})
 
     ## Import view data and rename some columns
     dataFileName = trialResults['camera_movement_filename']
     viewData = pd.read_csv( dataFolder + dataFileName)
     viewData = viewData.rename(columns={"time": "frameTime"})
 
-    ## Merge view and ball data into rawTrialData
-    if( len(ballData) == 0 ):
-        rawTrialData = viewData.reindex(viewData.columns.union(ballData.columns), axis=1)
-    else:
-        rawTrialData = pd.merge(viewData, ballData, on ='frameTime',validate= 'one_to_many')
-
-    ## Merge rawTrialData and paddle data
-    if( len(paddleData) == 0 ):
-        rawTrialData = rawTrialData.reindex(viewData.columns.union(paddleData.columns), axis=1)
-    else:
-        rawTrialData = pd.merge(rawTrialData, paddleData, on ='frameTime',validate= 'one_to_many')
-
-    ## Import and merge pupil timestamp data (recorded within Unity)
+    ## Import pupil timestamp data (recorded within Unity)
     dataFileName = trialResults['pupil_pupilTimeStamp_filename']
     pupilTimestampData = pd.read_csv( dataFolder + dataFileName)
     pupilTimestampData = pupilTimestampData.rename(columns={"time": "frameTime"})
-    rawTrialData = pd.merge( rawTrialData, pupilTimestampData, on ='frameTime',validate= 'one_to_many')
 
-    rawTrialData['trialNumber'] = trialResults['trial_num']
-    rawTrialData['blockNumber'] = trialResults['block_num']
-
-    ## Import gaze data
+    ## Import gaze direction data
     gazeDataFolderList = []
     [gazeDataFolderList.append(name) for name in os.listdir(dataFolder + 'PupilData') if name[0] is not '.']
     
-    pupilSessionFolder = '/' + gazeDataFolderList[0] 
+    pupilSessionFolder = '/' + gazeDataFolderList[0]   
     gazeDataFolder = dataFolder + 'PupilData' + pupilSessionFolder
 
     try:
@@ -129,26 +107,81 @@ def processTrial(dataFolder, trialResults, gazeConfidenceThreshold, numTrials = 
     # Sort, because the left/right eye data is written asynchronously, and this means timestamps may not be monotonically increasing.
     gazePositionsDF.sort_values(by='pupilTimestamp',inplace=True)
 
-    ## Merge gaze data
+    ##################################################################################################
+    ##################################################################################################
+    ## Create rawTrialData and merge with view data
+
+    rawTrialData = pupilTimestampData;
+    rawTrialData['trialNumber'] = trialResults['trial_num']
+    rawTrialData['blockNumber'] = trialResults['block_num']
+    rawTrialData = pd.merge(rawTrialData, viewData, on ='frameTime',validate= 'one_to_many')
+
+    ballData = []
+    paddleData = []
+
+    if(trialResults['trialType'] == 'interception'):
+            
+        ## Import ball data and rename some columns
+        dataFileName = trialResults['ball_movement_filename']
+        ballData = pd.read_csv( dataFolder + dataFileName)
+        ballData = ballData.rename(columns={"time": "frameTime"})
+        ballData.rename(columns={"pos_x": "ballPos_x", "pos_y": "ballPos_y","pos_z": "ballPos_z"},inplace=True)
+        ballData.rename(columns={"rot_x": "ballRot_x", "rot_y": "ballRot_y","rot_z": "ballRot_z"},inplace=True)
+
+        ## Import paddle data and rename some columns
+        dataFileName = trialResults['paddle_movement_filename']
+        paddleData = pd.read_csv( dataFolder + dataFileName)
+        paddleData = paddleData.rename(columns={"time": "frameTime"})
+
+        ## Merge view and ball data into rawTrialData
+        rawTrialData = pd.merge(rawTrialData, ballData, on ='frameTime',validate= 'one_to_many')
+        rawTrialData = pd.merge(rawTrialData, paddleData, on ='frameTime',validate= 'one_to_many')
+
+    if(trialResults['trialType'] == 'CalibrationAssessment'):
+        ## Import ball data and rename some columns
+        dataFileName = trialResults['etassessment_calibrationAssessment_filename']
+        assessmentData = pd.read_csv( dataFolder + dataFileName)
+        
+        newKeys = ['frameTime']
+        [newKeys.append(key[13:]) for key in assessmentData.keys()[1:]] # Fix a silly mistake I made when naming columns
+        assessmentData.columns = newKeys
+
+        rawTrialData = pd.merge(rawTrialData, assessmentData, on ='frameTime',validate= 'one_to_many')
+
+    ################################################################################
+    ## Pupil gaze direction data is for the whole experiment while time stamps are recorded only during an ongoing trial.
+    ## Find the slices of gaze dir data that map onto the trial timestamps, and concatenate them.
+
+    ## Group trial data by blocks and trials
     gbBlTr = rawTrialData.groupby(['blockNumber','trialNumber'])
     tr = gbBlTr.get_group( list(gbBlTr.groups.keys())[0])
 
-    ## Gaze data is for the whole experiment while trial data is for the trial only.
-    ## Find the slice of gaze data that maps onto the trial timestamps
     firstTS = tr.head(1)['pupilTimestamp']
     lastTS = tr.tail(1)['pupilTimestamp']
     firstIdx = list(map(lambda i: i> float(firstTS), gazePositionsDF['pupilTimestamp'])).index(True)
     lastIdx = list(map(lambda i: i> float(lastTS), gazePositionsDF['pupilTimestamp'])).index(True)
     rawGazeData = gazePositionsDF.loc[firstIdx:lastIdx]
     
-    # Drop data below the confidence level
-    filteredGazeData = rawGazeData.reset_index().drop(np.where(rawGazeData['confidence'] < gazeConfidenceThreshold )[0])
+    # # Drop data below the confidence level
+    # filteredGazeData = rawGazeData.reset_index().drop(np.where(rawGazeData['confidence'] < gazeConfidenceThreshold )[0])
     
     # Merge gaze and trial data
-    interpDF = pd.merge( rawTrialData, filteredGazeData, on ='pupilTimestamp',how='outer',sort=True)
+    interpDF = pd.merge( rawTrialData, rawGazeData.reset_index(), on ='pupilTimestamp',how='outer',sort=True)
 
     # Upsample trial data to the resolution of gaze data
+    # logger.warning('*** UPSAMPLING NON-GAZE DATA TO MATCH EYE TRACKER SAMPLING FREQUENCY ***')
     interpDF = interpDF.interpolate(method='linear',downcast='infer')
+
+    if(trialResults['trialType'] == 'CalibrationAssessment'):
+        # There are values that should not be interpolated linearly.  
+        # For example, the unity frame should be held constant as multiple pupil labs samples come in
+
+        interpDF['frameTime'] = interpDF['frameTime'].fillna(method='ffill')
+        interpDF['isHeadFixed'] = interpDF['isHeadFixed'].fillna(method='ffill')
+        interpDF['currentTargetName'] = interpDF['currentTargetName'].fillna(method='ffill')
+
+    # Drop matrixes from processed dataframe until I can figure out how to properly interpolate 
+    interpDF.drop(labels=interpDF.columns[(interpDF.columns.get_level_values(0).str.contains('4x4'))],axis=1)
 
     # Convert to multiindex
     newColList = [convertIndexToMultiIndexUsingUnderscore(c) for c in interpDF.columns[:len(rawTrialData.columns)]]
@@ -156,9 +189,9 @@ def processTrial(dataFolder, trialResults, gazeConfidenceThreshold, numTrials = 
     newColList.extend(newGazeColList)
     interpDF.columns = pd.MultiIndex.from_tuples(newColList)
 
-    ### Some checks ###
-    if( len(interpDF) > ( len(rawTrialData) + len(filteredGazeData)) ):
-        logger.warning('len(interpDF) > ( len(rawTrialData) + len(filteredGazeData))')
+    # Some sanity checks 
+    if( len(interpDF) > ( len(rawTrialData) + len(rawGazeData)) ):
+        logger.warning('len(interpDF) > ( len(rawTrialData) + len(rawGazeData))')
 
     dictOut = {"rawUnityData": rawTrialData, "rawGazeData": rawGazeData, "interpolatedData": interpDF}
 
@@ -167,7 +200,26 @@ def processTrial(dataFolder, trialResults, gazeConfidenceThreshold, numTrials = 
 ################################################################################
 ################################################################################
 
-def unpackSession(subNum, gazeDataConfidenceThreshold = 0.6, doNotLoad = False):
+def unpackSession(subNum, doNotLoad = False):
+    '''
+    Exports a dictionary with the following keys:
+
+    * subID: self explanatory
+    * trialInfo: metadata for the trial
+    * expConfig: metadata for the experiment
+
+    * rawExpUnity: raw data recorded at each Unity call ot Update() - 90 Hz on the Vive.  Data is for catching experiment trials only.
+
+    * rawExpGaze: raw data recorded at each sample of a Pupil eye camera - [two interleaved 120 hz streams, so approx 240 hz] Data is for catching experiment trials only.
+
+    * processedExp: Formed by upsampling rawExpUnity to match the frequency of rawExpGaze, and merging. Data is for catching experiment trials only.
+
+    * rawCalibUnity: Same as rawExpUnity but for calibraiton assessment trials only.
+    * rawCalibGaze: Same as rawExpGaze but for calibraiton assessment trials only.
+    * processedCalib: Same as processedExp but for calibraiton assessment trials only.
+
+
+    '''
 
     # Get folder/filenames
     dataFolderList = []
@@ -215,7 +267,7 @@ def unpackSession(subNum, gazeDataConfidenceThreshold = 0.6, doNotLoad = False):
 
     for trIdx, trialResults in trialData.iterrows():
 
-        trialDict = processTrial(dataFolder, trialResults, gazeDataConfidenceThreshold,len(trialData))
+        trialDict = processTrial(dataFolder, trialResults,len(trialData))
 
         def addToDF(targetDF,dfIn):
             
@@ -238,14 +290,14 @@ def unpackSession(subNum, gazeDataConfidenceThreshold = 0.6, doNotLoad = False):
             rawCalibUnityDataDf = addToDF(rawCalibUnityDataDf,trialDict['rawUnityData'])
             rawCalibGazeDataDf = addToDF(rawCalibGazeDataDf,trialDict['rawGazeData'])
 
-
-    # Rename trialdata columns and convert to multiindex
+    # Rename trialdata columns
     trialData.rename(columns={"session_num":"sessionNumber","trial_num":"trialNumber",
         "block_num":"blockNumber","trial_num_in_block":"trialNumberInBlock",
         "start_time":"startTime","end_time":"endTime"},inplace=True)
 
     trDataFiles = [i for i in trialData.columns.to_list() if '_filename' in i] 
 
+    # Convert to multiindex
     newColList = [convertIndexToMultiIndexUsingUnderscore(c) for c in trialData.columns[:-len(trDataFiles)]]
     newColList.extend([convertIndexToMultiIndexIgnoringUnderscore(c) for c in trialData.columns[-len(trDataFiles):]])
     trialData.columns = pd.MultiIndex.from_tuples(newColList)
@@ -256,13 +308,13 @@ def unpackSession(subNum, gazeDataConfidenceThreshold = 0.6, doNotLoad = False):
     processedCalibDataDf = processedCalibDataDf.reset_index(drop=True)
     
     analysisParameters = json.load( open('analysisParameters.json'))
-    analysisParameters['gazeDataConfidenceThreshold'] = gazeDataConfidenceThreshold
+    # analysisParameters['gazeDataConfidenceThreshold'] = gazeDataConfidenceThreshold
 
     subID = json.load( open(dataFolder + 'participant_details.json'))['ppid']
 
     dictOut = {"subID": subID, "trialInfo": trialData.sort_index(axis=1),"expConfig": expDict,
         "rawExpUnity": rawExpUnityDataDf.sort_index(axis=1), "rawExpGaze": rawExpGazeDataDf.sort_index(axis=1), "processedExp": processedExpDataDf.sort_index(axis=1),
-        "rawCalibUnity": rawExpUnityDataDf.sort_index(axis=1), "rawCalibGaze": rawExpGazeDataDf.sort_index(axis=1), "processedCalib": processedCalibDataDf.sort_index(axis=1),
+        "rawCalibUnity": rawCalibUnityDataDf.sort_index(axis=1), "rawCalibGaze": rawCalibGazeDataDf.sort_index(axis=1), "processedCalib": processedCalibDataDf.sort_index(axis=1),
         "analysisParameters":analysisParameters}
 
     with open(picklePath, 'wb') as handle:
@@ -337,7 +389,7 @@ if __name__ == "__main__":
     for i, name in enumerate(dataFolderList):
         print(str(i) + ': ' + name )
 
-    sessionDict = unpackSession(subNum, gazeDataConfidenceThreshold = 0.6, doNotLoad = True)
+    sessionDict = unpackSession(subNum, doNotLoad = True)
 
 
 # %%

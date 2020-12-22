@@ -1240,3 +1240,4 @@ def calcCalibrationQuality(sessionDictIn):
 				  meanCalibError = calibError_tIdx))
 
 	return sessionDictIn
+
