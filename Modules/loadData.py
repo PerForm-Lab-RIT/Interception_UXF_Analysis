@@ -75,22 +75,25 @@ def processTrial(dataFolder, trialResults, numTrials = False):
     else:
         logger.info('Processing subject: ' + trialResults['ppid'] + ' t = ' + str(trialResults['trial_num']))
 
+    dataParentFolder = '/'.join(dataFolder.split('/')[:-2]) + '/';
+
     ## Import view data and rename some columns
-    dataFileName = trialResults['camera_movement_filename']
-    viewData = pd.read_csv( dataFolder + dataFileName)
+    dataFileName = '/'.join(trialResults['camera_movement_location_0'].split('/')[-2:])
+    viewData = pd.read_csv( dataParentFolder + dataFileName)
     viewData = viewData.rename(columns={"time": "frameTime"})
 
     ## Import pupil timestamp data (recorded within Unity)
-    dataFileName = trialResults['pupil_pupilTimeStamp_filename']
-    pupilTimestampData = pd.read_csv( dataFolder + dataFileName)
-    pupilTimestampData = pupilTimestampData.rename(columns={"time": "frameTime"})
+    dataFileName = '/'.join(trialResults['time_sync_pupilTimeStamp_location_0'].split('/')[-2:])
+    pupilTimestampData = pd.read_csv( dataParentFolder + dataFileName)
+    pupilTimestampData = pupilTimestampData.rename(columns={"time": "frameTime","timeStamp":"pupilTimestamp"})
+
 
     ## Import gaze direction data
     gazeDataFolderList = []
-    [gazeDataFolderList.append(name) for name in os.listdir(dataFolder + 'PupilData') if name[0] is not '.']
+    [gazeDataFolderList.append(name) for name in os.listdir(dataParentFolder + 'PupilData') if name[0] is not '.']
     
     pupilSessionFolder = '/' + gazeDataFolderList[0]   
-    gazeDataFolder = dataFolder + 'PupilData' + pupilSessionFolder
+    gazeDataFolder = dataParentFolder + 'PupilData' + pupilSessionFolder
 
     try:
         pupilExportsFolder = []
@@ -122,15 +125,16 @@ def processTrial(dataFolder, trialResults, numTrials = False):
     if(trialResults['trialType'] == 'interception'):
             
         ## Import ball data and rename some columns
-        dataFileName = trialResults['ball_movement_filename']
-        ballData = pd.read_csv( dataFolder + dataFileName)
+        dataFileName = '/'.join(trialResults['ball_movement_location_0'].split('/')[-2:])
+
+        ballData = pd.read_csv( dataParentFolder + dataFileName)
         ballData = ballData.rename(columns={"time": "frameTime"})
         ballData.rename(columns={"pos_x": "ballPos_x", "pos_y": "ballPos_y","pos_z": "ballPos_z"},inplace=True)
         ballData.rename(columns={"rot_x": "ballRot_x", "rot_y": "ballRot_y","rot_z": "ballRot_z"},inplace=True)
 
         ## Import paddle data and rename some columns
-        dataFileName = trialResults['paddle_movement_filename']
-        paddleData = pd.read_csv( dataFolder + dataFileName)
+        dataFileName = '/'.join(trialResults['paddle_movement_location_0'].split('/')[-2:])
+        paddleData = pd.read_csv( dataParentFolder + dataFileName)
         paddleData = paddleData.rename(columns={"time": "frameTime"})
 
         ## Merge view and ball data into rawTrialData
@@ -138,9 +142,10 @@ def processTrial(dataFolder, trialResults, numTrials = False):
         rawTrialData = pd.merge(rawTrialData, paddleData, on ='frameTime',validate= 'one_to_many')
 
     if(trialResults['trialType'] == 'CalibrationAssessment'):
+
         ## Import ball data and rename some columns
-        dataFileName = trialResults['etassessment_calibrationAssessment_filename']
-        assessmentData = pd.read_csv( dataFolder + dataFileName)
+        dataFileName = '/'.join(trialResults['etassessment_calibrationAssessment_location_0'].split('/')[-2:])
+        assessmentData = pd.read_csv(dataParentFolder + dataFileName)
         
         newKeys = ['frameTime']
         [newKeys.append(key[13:]) for key in assessmentData.keys()[1:]] # Fix a silly mistake I made when naming columns
@@ -263,7 +268,7 @@ def unpackSession(subNum, doNotLoad = False):
     rawCalibGazeDataDf = pd.DataFrame()
     processedCalibDataDf = pd.DataFrame()
 
-    trialData = pd.read_csv( dataFolder + 'trial_results.csv')
+    trialData = pd.read_csv( dataParentFolder + '/trial_results.csv')
 
     for trIdx, trialResults in trialData.iterrows():
 
@@ -302,7 +307,7 @@ def unpackSession(subNum, doNotLoad = False):
     newColList.extend([convertIndexToMultiIndexIgnoringUnderscore(c) for c in trialData.columns[-len(trDataFiles):]])
     trialData.columns = pd.MultiIndex.from_tuples(newColList)
     
-    expDict = json.load( open(dataFolder + 'settings.json'))
+    expDict = json.load( open(dataParentFolder + '/settings/' + 'settings.json'))
 
     processedExpDataDf = processedExpDataDf.reset_index(drop=True)
     processedCalibDataDf = processedCalibDataDf.reset_index(drop=True)
@@ -310,7 +315,9 @@ def unpackSession(subNum, doNotLoad = False):
     analysisParameters = json.load( open('analysisParameters.json'))
     # analysisParameters['gazeDataConfidenceThreshold'] = gazeDataConfidenceThreshold
 
-    subID = json.load( open(dataFolder + 'participant_details.json'))['ppid']
+    # TODO:  FIX THIS SHIT
+    #subID = json.load( open(dataParentFolder + '/participantdetails/participant_details.csv'))['ppid']
+    subID = pd.read_csv(dataParentFolder + '/participantdetails/participant_details.csv')['ppid']
 
     dictOut = {"subID": subID, "trialInfo": trialData.sort_index(axis=1),"expConfig": expDict,
         "rawExpUnity": rawExpUnityDataDf.sort_index(axis=1), "rawExpGaze": rawExpGazeDataDf.sort_index(axis=1), "processedExp": processedExpDataDf.sort_index(axis=1),
