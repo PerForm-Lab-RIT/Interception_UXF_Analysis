@@ -34,7 +34,7 @@ def convertIndexToMultiIndexUsingUnderscore(labelIn):
 
     s = labelIn.split('_')
 
-    if len(s) is 2:
+    if len(s) == 2:
 
         # otherwise, its already a scalar
         (first,second) = s
@@ -87,10 +87,9 @@ def processTrial(dataFolder, trialResults, numTrials = False):
     pupilTimestampData = pd.read_csv( dataParentFolder + dataFileName)
     pupilTimestampData = pupilTimestampData.rename(columns={"time": "frameTime","timeStamp":"pupilTimestamp"})
 
-
     ## Import gaze direction data
     gazeDataFolderList = []
-    [gazeDataFolderList.append(name) for name in os.listdir(dataParentFolder + 'PupilData') if name[0] is not '.']
+    [gazeDataFolderList.append(name) for name in os.listdir(dataParentFolder + 'PupilData') if name[0] != '.'] # is not
     
     pupilSessionFolder = '/' + gazeDataFolderList[0]   
     gazeDataFolder = dataParentFolder + 'PupilData' + pupilSessionFolder
@@ -101,7 +100,7 @@ def processTrial(dataFolder, trialResults, numTrials = False):
 
         # Defaults to the most recent pupil export folder (highest number)
         gazePositionsDF = pd.read_csv( gazeDataFolder + '/Exports/' + pupilExportsFolder[-1] + '/gaze_positions.csv' )
-        gazePositionsDF.head()
+
     except:
         logger.exception('No gaze_positions.csv.  Process and export data in Pupil Player.')
 
@@ -113,6 +112,9 @@ def processTrial(dataFolder, trialResults, numTrials = False):
     ##################################################################################################
     ##################################################################################################
     ## Create rawTrialData and merge with view data
+
+    if len(pupilTimestampData) == 0:
+        logger.exception('No pupil timestamp data.')
 
     rawTrialData = pupilTimestampData;
     rawTrialData['trialNumber'] = trialResults['trial_num']
@@ -275,13 +277,14 @@ def unpackSession(subNum, doNotLoad = False):
         trialDict = processTrial(dataFolder, trialResults,len(trialData))
 
         def addToDF(targetDF,dfIn):
-            
-            if( targetDF.empty ):
-                targetDF = dfIn
-            else:
-                targetDF = targetDF.append(dfIn)
 
-            return targetDF
+            return pd.concat([targetDF, dfIn])
+
+            # if( targetDF.empty ):
+            #     return dfIn
+            # else:
+            #     # targetDF = targetDF.append(dfIn)
+            #     return pd.concat([targetDF, dfIn])
 
         if (trialResults['trialType'] == 'interception'):
 
@@ -315,9 +318,10 @@ def unpackSession(subNum, doNotLoad = False):
     analysisParameters = json.load( open('analysisParameters.json'))
     # analysisParameters['gazeDataConfidenceThreshold'] = gazeDataConfidenceThreshold
 
-    # TODO:  FIX THIS SHIT
+    
+    #logger.warning('(**********************  SUBID FILE IS HARDCODED *******************************')
     #subID = json.load( open(dataParentFolder + '/participantdetails/participant_details.csv'))['ppid']
-    subID = pd.read_csv(dataParentFolder + '/participantdetails/participant_details.csv')['ppid']
+    subID = trialData['ppid'][1] 
 
     dictOut = {"subID": subID, "trialInfo": trialData.sort_index(axis=1),"expConfig": expDict,
         "rawExpUnity": rawExpUnityDataDf.sort_index(axis=1), "rawExpGaze": rawExpGazeDataDf.sort_index(axis=1), "processedExp": processedExpDataDf.sort_index(axis=1),

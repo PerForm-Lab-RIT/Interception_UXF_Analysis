@@ -40,8 +40,7 @@ def calcCatchingPlane(sessionDict):
     ########################################################
     # Calc paddle-to-ball direction (normalized paddle-to-ball vector)
 
-    paddleToBallDir_fr_XYZ = np.array([np.divide(XYZ, np.linalg.norm(
-        XYZ)) for XYZ in paddleToBallVec_fr_XYZ], dtype=np.float)
+    paddleToBallDir_fr_XYZ = np.array([np.divide(XYZ, np.linalg.norm( XYZ)) for XYZ in paddleToBallVec_fr_XYZ], dtype=np.float64)
 
     paddleToBallDirDf = pd.DataFrame({('paddleToBallDir', 'X'): paddleToBallDir_fr_XYZ[:, 0],
                                       ('paddleToBallDir', 'Y'): paddleToBallDir_fr_XYZ[:, 1],
@@ -111,8 +110,7 @@ def findLastFrame(sessionDict):
 
             # print("Int: " + str(trialInfo["trialNumber"].to_list()[0]) + "/" + str(trialInfo['trialType'].to_list()[0]) )
             
-            trialData = sessionDict['processedExp'].groupby(
-                ['trialNumber']).get_group(trNum)
+            trialData = sessionDict['processedExp'].groupby(['trialNumber']).get_group(trNum)
 
             if trialInfo['isCaughtQ'].bool():
 
@@ -133,8 +131,7 @@ def findLastFrame(sessionDict):
                 ballHitPaddleOnFr = False
 
                 def dotBallPaddle(rowIn, ballInitialPos):
-                        a = np.array(
-                            rowIn['paddleToBallDir'].values, dtype=np.float)
+                        a = np.array(rowIn['paddleToBallDir'].values, dtype=np.float64)
                         b = np.array(ballInitialPos - rowIn['paddlePos'])
                         c = np.dot(a, b) / np.linalg.norm(b)
                         return c
@@ -189,14 +186,14 @@ def calcCatchingError(sessionDict):
 
             #  Ball trajectory direction
             ballTrajDir_XYZ = (trialData['ballPos'].iloc[10] - trialData['ballPos'].iloc[1]) / np.linalg.norm(trialData['ballPos'].iloc[10] - trialData['ballPos'].iloc[1])
-            ballTrajDir_XYZ = np.array(ballTrajDir_XYZ,dtype=np.float)
+            ballTrajDir_XYZ = np.array(ballTrajDir_XYZ,dtype= np.float64)
             paddleYDir_xyz = [0,1,0]
             paddleXDir_xyz = np.cross(-ballTrajDir_XYZ,paddleYDir_xyz)
             # paddleToBallVec_fr_XYZ = trialData['ballPos'].values - trialData['paddlePos'].values
 
             ballRelToPaddle_xyz = np.array(bXYZ-pXYZ).T
-            xErr = np.float(np.dot(paddleXDir_xyz,ballRelToPaddle_xyz))
-            yErr = np.float(np.dot(paddleYDir_xyz,ballRelToPaddle_xyz))
+            xErr =  np.float64(np.dot(paddleXDir_xyz,ballRelToPaddle_xyz))
+            yErr =  np.float64(np.dot(paddleYDir_xyz,ballRelToPaddle_xyz))
 
             ballInPaddlePlaneX_fr.append(xErr)
             ballInPaddlePlaneY_fr.append(yErr)
@@ -272,8 +269,8 @@ def calcGIW(sessionDictIn):
     
 def calcCycToBallVector(sessionDict):
 
-    cycToBallVec = np.array(sessionDict['processedExp']['ballPos'] - sessionDict['processedExp']['cameraPos'],dtype=np.float )
-    cycToBallDir = np.array([np.divide(XYZ,np.linalg.norm(XYZ)) for XYZ in cycToBallVec],dtype=np.float)
+    cycToBallVec = np.array(sessionDict['processedExp']['ballPos'] - sessionDict['processedExp']['cameraPos'],dtype= np.float64 )
+    cycToBallDir = np.array([np.divide(XYZ,np.linalg.norm(XYZ)) for XYZ in cycToBallVec],dtype= np.float64)
 
     sessionDict['processedExp'][('cycToBallDir','x')] = cycToBallDir[:,0]
     sessionDict['processedExp'][('cycToBallDir','y')] = cycToBallDir[:,1]
@@ -293,19 +290,19 @@ def calcCycToBallVector(sessionDict):
 
 def calcSphericalcoordinates(sessionDict):
 
-	proc = sessionDict['processedExp']
-	sessionDict['processedExp']['cycGIW_az'] = np.rad2deg(np.arctan(proc[('cycGIWDir','x')]/proc[('cycGIWDir','z')]))
-	sessionDict['processedExp']['cycGIW_el']  = np.rad2deg(np.arctan(proc[('cycGIWDir','y')]/proc[('cycGIWDir','z')]))
+    proc = sessionDict['processedExp']
+    sessionDict['processedExp']['cycGIW_az'] = np.rad2deg(np.arctan(proc[('cycGIWDir','x')]/proc[('cycGIWDir','z')]))
+    sessionDict['processedExp']['cycGIW_el']  = np.rad2deg(np.arctan(proc[('cycGIWDir','y')]/proc[('cycGIWDir','z')]))
 
-	sessionDict['processedExp']['ball_az'] = np.rad2deg(np.arctan(proc[('cycToBallDir','x')]/proc[('cycToBallDir','z')]))
-	sessionDict['processedExp']['ball_el']  = np.rad2deg(np.arctan(proc[('cycToBallDir','y')]/proc[('cycToBallDir','z')]))
+    sessionDict['processedExp']['ball_az'] = np.rad2deg(np.arctan(proc[('cycToBallDir','x')]/proc[('cycToBallDir','z')]))
+    sessionDict['processedExp']['ball_el']  = np.rad2deg(np.arctan(proc[('cycToBallDir','y')]/proc[('cycToBallDir','z')]))
 
-	logger.info('Added sessionDict[\'processedExp\'][\'ball_az\']')
-	logger.info('Added sessionDict[\'processedExp\'][\'ball_el\']')
-	logger.info('Added sessionDict[\'processedExp\'][\'cycGIW_az\']')
-	logger.info('Added sessionDict[\'processedExp\'][\'cycGIW_el\']')
+    logger.info('Added sessionDict[\'processedExp\'][\'ball_az\']')
+    logger.info('Added sessionDict[\'processedExp\'][\'ball_el\']')
+    logger.info('Added sessionDict[\'processedExp\'][\'cycGIW_az\']')
+    logger.info('Added sessionDict[\'processedExp\'][\'cycGIW_el\']')
 
-	return sessionDict
+    return sessionDict
 
 def calcTrackingError(sessionDict):
 
@@ -335,9 +332,9 @@ def calcTrackingError(sessionDict):
                 azimuthalDist = row['cycGIW_az'] - row['ball_az']
                 elevationDist = row['cycGIW_el'] - row['ball_el']
 
-                ballRadiusDegs = np.float(row['ballRadiusDegs'])
+                ballRadiusDegs = np.float64(row['ballRadiusDegs'])
 
-                if np.float(azimuthalDist) > 0:
+                if( np.float64(azimuthalDist) > 0):
                     azimuthalDist -= ballRadiusDegs
                 else:
                     azimuthalDist += ballRadiusDegs
@@ -354,12 +351,12 @@ def calcTrackingError(sessionDict):
             (azDist,elDist) = zip(*absAzEl_XYZ)
 
             meanEyeToBallCenterAz_tr[tInfoIloc] = np.mean(azDist)
-            meanEyeToBallCenter_tr[tInfoIloc] = np.nanmean([np.sqrt(np.float(fr[0]*fr[0] + fr[1]* fr[1])) for fr in absAzEl_XYZ ])
+            meanEyeToBallCenter_tr[tInfoIloc] = np.nanmean([np.sqrt( np.float64(fr[0]*fr[0] + fr[1]* fr[1])) for fr in absAzEl_XYZ ])
 
             absAzEl_XYZ = proc.iloc[startFr:endFr].apply(lambda row: calcEyeToBallEdge(row), axis=1)
             (azDist,elDist) = zip(*absAzEl_XYZ)
             meanEyeToBallEdgeAz_tr[tInfoIloc] = np.mean(azDist)
-            meanEyeToBallEdge_tr[tInfoIloc] = np.nanmean([np.sqrt(np.float(fr[0]*fr[0] + fr[1]* fr[1])) for fr in absAzEl_XYZ ])
+            meanEyeToBallEdge_tr[tInfoIloc] = np.nanmean([np.sqrt( np.float64(fr[0]*fr[0] + fr[1]* fr[1])) for fr in absAzEl_XYZ ])
 
             radiusAtStart = proc['ballRadiusDegs'].iloc[startFr]
             radiusAtEnd = proc['ballRadiusDegs'].iloc[endFr]
@@ -410,7 +407,7 @@ def filterAndDiffSignals(sessionDict):
     # FIlter
     proc = sessionDict['processedExp']
 
-    frameDur = np.float(proc['frameTime'].diff().mode()[0])
+    frameDur =  np.float64(proc['frameTime'].diff().mode()[0])
 
 
     proc['cycGIWFilt_az'] = proc['cycGIW_az'].rolling(medFiltSize).median()
@@ -439,11 +436,11 @@ def filterAndDiffSignals(sessionDict):
 
     # Differentiate and save gaze velocities
 
-    gazeVelFiltAz_fr = np.diff(np.array(proc['cycGIWFilt_az'],dtype=np.float))  / frameDur
+    gazeVelFiltAz_fr = np.diff(np.array(proc['cycGIWFilt_az'],dtype= np.float64))  / frameDur
     gazeVelFiltAz_fr = np.hstack([0 ,gazeVelFiltAz_fr])
     sessionDict['processedExp']['gazeVelFiltAz'] = gazeVelFiltAz_fr
 
-    gazeVelFiltEl_fr = np.diff(np.array(proc['cycGIWFilt_el'],dtype=np.float)) / frameDur
+    gazeVelFiltEl_fr = np.diff(np.array(proc['cycGIWFilt_el'],dtype= np.float64)) / frameDur
     gazeVelFiltEl_fr = np.hstack([0 ,gazeVelFiltEl_fr])
     proc['gazeVelFiltEl'] = gazeVelFiltEl_fr
 
@@ -451,13 +448,13 @@ def filterAndDiffSignals(sessionDict):
 
     # Differentiate and save ball / expansion velocities
 
-    ballVel_Az = np.diff(np.array(proc['ball_az'],dtype=np.float)) / frameDur
-    ballVel_El = np.diff(np.array(proc['ball_el'],dtype=np.float)) / frameDur
+    ballVel_Az = np.diff(np.array(proc['ball_az'],dtype= np.float64)) / frameDur
+    ballVel_El = np.diff(np.array(proc['ball_el'],dtype= np.float64)) / frameDur
     ballVel_fr = np.sqrt(np.sum(np.power([ballVel_Az,ballVel_El],2),axis=0))
     ballVel_fr = np.hstack([0 ,ballVel_fr])
     proc['ballVel2D_fr'] = ballVel_fr
 
-    ballExpansionRate_fr = np.diff(2.*np.array(proc['ballRadiusDegs'],dtype=np.float)) / frameDur
+    ballExpansionRate_fr = np.diff(2.*np.array(proc['ballRadiusDegs'],dtype= np.float64)) / frameDur
     ballExpansionRate_fr = np.hstack([0 ,ballExpansionRate_fr])
     proc['ballExpansionRate'] = ballExpansionRate_fr
 
@@ -469,10 +466,10 @@ def filterAndDiffSignals(sessionDict):
 
     proc['gazeVelRelBallEdges'] = ((proc['gazeVelFilt'] - ballVelTrailingEdge_fr) / ballVelLeadingEdge_fr)
 
-    ballVel_az = np.diff(np.array(proc['ball_az'],dtype=np.float)) / frameDur
+    ballVel_az = np.diff(np.array(proc['ball_az'],dtype= np.float64)) / frameDur
     proc['ballVel_az'] = np.hstack([0 ,ballVel_az])
 
-    ballVel_el = np.diff(np.array(proc['ball_el'],dtype=np.float)) / frameDur
+    ballVel_el = np.diff(np.array(proc['ball_el'],dtype= np.float64)) / frameDur
     proc['ballVel_el'] = np.hstack([0 ,ballVel_az])
 
     sessionDict['processedExp'] = proc
@@ -552,7 +549,7 @@ def vectorMovementModel( sessionDict):
             winStartTimeMs = analysisParameters['analysisWindowStart']
             winEndTimeMs = analysisParameters['analysisWindowEnd']
 
-            trialTime_fr = np.array(tr['frameTime'],np.float) - np.array(tr['frameTime'],np.float)[0]
+            trialTime_fr = np.array(tr['frameTime'], np.float64) - np.array(tr['frameTime'], np.float64)[0]
             interpTime_s = np.arange(0,trialTime_fr[-1],interpResS)
 
             # Analysis should focus on the frames before ball collision or passing
@@ -561,19 +558,19 @@ def vectorMovementModel( sessionDict):
             lastTrajFrame = np.min([int(endFrameIdx),
                     int(trialInfo[('passVertPlaneAtPaddleFr', '')])])
 
-            analysisTime_fr = np.array(tr['frameTime'],np.float)[:lastTrajFrame] - np.array(tr['frameTime'],np.float)[0]
+            analysisTime_fr = np.array(tr['frameTime'], np.float64)[:lastTrajFrame] - np.array(tr['frameTime'], np.float64)[0]
 
             # Interpolate
-            interpBallAz_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['ball_az'][:lastTrajFrame],dtype=np.float))
-            interpBallEl_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['ball_el'][:lastTrajFrame],dtype=np.float))
+            interpBallAz_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['ball_az'][:lastTrajFrame],dtype= np.float64))
+            interpBallEl_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['ball_el'][:lastTrajFrame],dtype= np.float64))
 
-            interpGazeAz_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['cycGIWFilt_az'][:lastTrajFrame],dtype=np.float))
-            interpGazeEl_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['cycGIWFilt_el'][:lastTrajFrame],dtype=np.float))
+            interpGazeAz_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['cycGIWFilt_az'][:lastTrajFrame],dtype= np.float64))
+            interpGazeEl_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['cycGIWFilt_el'][:lastTrajFrame],dtype= np.float64))
 
-            cycToBallVelAz_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['ballVel_az'][:lastTrajFrame],dtype=np.float))
-            cycToBallVelEl_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['ballVel_el'][:lastTrajFrame],dtype=np.float))
+            cycToBallVelAz_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['ballVel_az'][:lastTrajFrame],dtype= np.float64))
+            cycToBallVelEl_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['ballVel_el'][:lastTrajFrame],dtype= np.float64))
 
-            ballRadiusDegs_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['ballRadiusDegs'][:lastTrajFrame],dtype=np.float))
+            ballRadiusDegs_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['ballRadiusDegs'][:lastTrajFrame],dtype= np.float64))
 
             # gazeVelFilt_s = np.interp(interpTime_s,analysisTime_fr,tr['gazeVelFilt'][:lastTrajFrame])
 
@@ -769,7 +766,7 @@ def loadTemp():
 def processAllSesssions(doNotLoad=False):
 
     dataFolderList = []
-    [dataFolderList.append(name) for name in os.listdir("Data/") if name[0] is not '.']
+    [dataFolderList.append(name) for name in os.listdir("Data/") if name[0] != '.']
 
     sessionFiles = []
     for subNum in range(len(dataFolderList)):
@@ -800,7 +797,9 @@ def processSingleSession(subNum, doNotLoad=False):
     # calibDF = False
 
     sessionDict = unpackSession(subNum, doNotLoad)
+
     sessionDict = calcCatchingPlane(sessionDict)
+
     sessionDict = findLastFrame(sessionDict)
     sessionDict = calcCatchingError(sessionDict)
     sessionDict = gazeAnalysisWindow(sessionDict)
