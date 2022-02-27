@@ -96,7 +96,7 @@ def processTrial(dataFolder, trialResults, numTrials = False):
 
     try:
         pupilExportsFolder = []
-        [pupilExportsFolder.append(name) for name in os.listdir(gazeDataFolder + '/Exports') if name[0] is not '.']
+        [pupilExportsFolder.append(name) for name in os.listdir(gazeDataFolder + '/Exports') if name[0] != '.']
 
         # Defaults to the most recent pupil export folder (highest number)
         gazePositionsDF = pd.read_csv( gazeDataFolder + '/Exports/' + pupilExportsFolder[-1] + '/gaze_positions.csv' )
@@ -230,7 +230,7 @@ def unpackSession(subNum, doNotLoad = False):
 
     # Get folder/filenames
     dataFolderList = []
-    [dataFolderList.append(name) for name in os.listdir("Data/") if name[0] is not '.']
+    [dataFolderList.append(name) for name in os.listdir("Data/") if name[0] != '.']
 
     for i, name in enumerate(dataFolderList):
             if i == subNum:
@@ -241,7 +241,7 @@ def unpackSession(subNum, doNotLoad = False):
 
     dataParentFolder = "Data/" + dataFolderList[subNum]
     dataSubFolderList = []
-    [dataSubFolderList.append(name) for name in os.listdir(dataParentFolder) if name[0] is not '.']
+    [dataSubFolderList.append(name) for name in os.listdir(dataParentFolder) if name[0] != '.']
     dataFolder = dataParentFolder + '/' + dataSubFolderList[0] + '/'
 
     logger.info('Processing session: ' + dataParentFolder)
@@ -334,53 +334,6 @@ def unpackSession(subNum, doNotLoad = False):
     return dictOut
 
 
-# def compileSubData():
-
-#     rawDataDF = False
-#     calibDF = False
-
-#     # ### Load dataframes
-#     # Remember to set loadParsedData, loadProcessedData.
-
-#     dataFolderList = []
-#     [dataFolderList.append(name) for name in os.listdir("Data/") if name[0] is not '.']
-
-#     allSessionData = []
-
-#     for subNum, subString in enumerate(dataFolderList):
-
-#         dataParentFolder = "Data/" + subString
-
-#         dataSubFolderList = [];
-#         [dataSubFolderList.append(name) for name in os.listdir("Data/" + dataParentFolder) if name[0] is not '.'];
-
-#         dataFolder = dataParentFolder + '/' + dataSubFolderList[0] + '/'
-#         trialData = pd.read_csv( dataFolder + 'trial_results.csv')
-
-#         for trIdx, trialResults in trialData.iterrows():
-
-#             trialDF = processTrial(dataFolder, trialResults)
-
-#             if (trialResults['trialType'] == 'interception'):
-#                 if( rawDataDF is False):
-#                     rawDataDF = trialDF
-#                 else:
-#                     rawDataDF = rawDataDF.append(trialDF)
-
-#             elif(trialResults['trialType'] == 'CalibrationAssessment'):
-
-#                 if( calibDF is False):
-#                     calibDF = trialDF
-#                 else:
-#                     calibDF = calibDF.append(trialDF)
-
-#         sessionDict = {"expInfo": trialData,"rawData": rawDataDF, "calibData": calibDF}
-#         allSessionData.append(sessionDict)
-
-#     with open('../allSessionData.pickle', 'wb') as handle:
-#         pickle.dump(allSessionData, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-# %%
 
 if __name__ == "__main__":
 
@@ -395,7 +348,7 @@ if __name__ == "__main__":
     # Remember to set loadParsedData, loadProcessedData.
 
     dataFolderList = []
-    [dataFolderList.append(name) for name in os.listdir("Data/") if name[0] is not '.']
+    [dataFolderList.append(name) for name in os.listdir("Data/") if name[0] != '.']
 
     for i, name in enumerate(dataFolderList):
         print(str(i) + ': ' + name )

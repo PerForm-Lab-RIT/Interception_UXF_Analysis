@@ -266,7 +266,14 @@ def calcGIW(sessionDictIn):
 
     logger.info('Added sessionDict[\'processedExp\'][\'cycGIWDir\']')
     return sessionDictIn
-    
+
+def flipGazeElevation(sessionDict):
+
+    sessionDict['processedExp'][('cycGIWDir','y')] = -sessionDict['processedExp'][('cycGIWDir','y')]
+    logger.info('Mirroring sessionDict[\'processedExp\'][\'cycGIWDir_y\']')
+
+    return sessionDict
+
 def calcCycToBallVector(sessionDict):
 
     cycToBallVec = np.array(sessionDict['processedExp']['ballPos'] - sessionDict['processedExp']['cameraPos'],dtype= np.float64 )
@@ -304,6 +311,8 @@ def calcSphericalcoordinates(sessionDict):
 
     return sessionDict
 
+
+
 def calcTrackingError(sessionDict):
 
     meanEyeToBallEdgeAz_tr = [np.nan] * len(sessionDict['trialInfo'])
@@ -313,7 +322,7 @@ def calcTrackingError(sessionDict):
 
     meanEyeToBallEdge_tr = [np.nan] * len(sessionDict['trialInfo'])
     meanEyeToBallCenter_tr = [np.nan] * len(sessionDict['trialInfo'])
-    
+
     for trialNum, proc in sessionDict['processedExp'].groupby('trialNumber'):
 
         tInfoIloc = int(sessionDict['trialInfo'][sessionDict['trialInfo']['trialNumber']==trialNum].index.tolist()[0])
@@ -384,15 +393,15 @@ def calcTrackingError(sessionDict):
 
 def calcBallAngularSize(sessionDict):
 
-	eyeToBallDist_fr = [np.sqrt( np.sum(  np.power(bXYZ-vXYZ,2))) for bXYZ,vXYZ in 
-        zip( sessionDict['processedExp']['ballPos'].values,sessionDict['processedExp']['cameraPos'].values)]
+    eyeToBallDist_fr = [np.sqrt( np.sum(  np.power(bXYZ-vXYZ,2))) for bXYZ,vXYZ in
+                        zip( sessionDict['processedExp']['ballPos'].values,sessionDict['processedExp']['cameraPos'].values)]
 
-	ballRadiusM_fr = sessionDict['processedExp']['ballMeshRadius']
-	sessionDict['processedExp']['ballRadiusDegs'] = [np.rad2deg(np.arctan(rad/dist)) for rad, dist in zip(ballRadiusM_fr,eyeToBallDist_fr)]
+    ballRadiusM_fr = sessionDict['processedExp']['ballMeshRadius']
+    sessionDict['processedExp']['ballRadiusDegs'] = [np.rad2deg(np.arctan(rad/dist)) for rad, dist in zip(ballRadiusM_fr,eyeToBallDist_fr)]
 
-	logger.info('Added sessionDict[\'processedExp\'][\'ballRadiusDegs\']')
+    logger.info('Added sessionDict[\'processedExp\'][\'ballRadiusDegs\']')
 
-	return sessionDict
+    return sessionDict
 
 def filterAndDiffSignals(sessionDict):
 
@@ -804,9 +813,13 @@ def processSingleSession(subNum, doNotLoad=False):
     sessionDict = calcCatchingError(sessionDict)
     sessionDict = gazeAnalysisWindow(sessionDict)
     sessionDict = calcGIW(sessionDict)
+    sessionDict = flipGazeElevation(sessionDict)
+
     sessionDict = calcCycToBallVector(sessionDict)
+    sessionDict = calcSphericalcoordinates(sessionDict)  # of ball and gaze
+
     sessionDict = calcBallAngularSize(sessionDict)
-    sessionDict = calcSphericalcoordinates(sessionDict)
+
     sessionDict = calcTrackingError(sessionDict)
     sessionDict = filterAndDiffSignals(sessionDict)
     sessionDict = vectorMovementModel(sessionDict)
