@@ -612,26 +612,26 @@ def filterAndDiffSignals(sessionDict):
 
     # Differentiate and save gaze velocities
 
-    gazeVelFiltAz_fr = np.diff(np.array(proc['cycGIWFilt_az'],dtype= np.float64))  / frameDur
-    gazeVelFiltAz_fr = np.hstack([0 ,gazeVelFiltAz_fr])
+    gazeVelFiltAz_fr = np.diff(np.array(proc['cycGIWFilt_az'],dtype= np.float64)) 
+    gazeVelFiltAz_fr = np.hstack([0 ,gazeVelFiltAz_fr])  / frameDur
     sessionDict['processedExp']['gazeVelFiltAz'] = gazeVelFiltAz_fr
 
-    gazeVelFiltEl_fr = np.diff(np.array(proc['cycGIWFilt_el'],dtype= np.float64)) / frameDur
-    gazeVelFiltEl_fr = np.hstack([0 ,gazeVelFiltEl_fr])
+    gazeVelFiltEl_fr = np.diff(np.array(proc['cycGIWFilt_el'],dtype= np.float64))
+    gazeVelFiltEl_fr = np.hstack([0 ,gazeVelFiltEl_fr])  / frameDur
     proc['gazeVelFiltEl'] = gazeVelFiltEl_fr
 
     proc['gazeVelFilt'] = np.sqrt(np.sum(np.power([gazeVelFiltAz_fr,gazeVelFiltEl_fr],2),axis=0))
 
     # Differentiate and save ball / expansion velocities
 
-    ballVel_Az = np.diff(np.array(proc['ball_az'],dtype= np.float64)) / frameDur
-    ballVel_El = np.diff(np.array(proc['ball_el'],dtype= np.float64)) / frameDur
-    ballVel_fr = np.sqrt(np.sum(np.power([ballVel_Az,ballVel_El],2),axis=0))
-    ballVel_fr = np.hstack([0 ,ballVel_fr])
+    ballVel_Az = np.diff(np.array(proc['ball_az'],dtype= np.float64)) 
+    ballVel_El = np.diff(np.array(proc['ball_el'],dtype= np.float64)) 
+    ballVel_fr = np.sqrt(np.sum(np.power([ballVel_Az,ballVel_El],2),axis=0))  
+    ballVel_fr = np.hstack([0 ,ballVel_fr])  / proc['frameTime'].diff()
     proc['ballVel2D_fr'] = ballVel_fr
 
-    ballExpansionRate_fr = np.diff(2.*np.array(proc['ballRadiusDegs'],dtype= np.float64)) / frameDur
-    ballExpansionRate_fr = np.hstack([0 ,ballExpansionRate_fr])
+    ballExpansionRate_fr = np.diff(2.*np.array(proc['ballRadiusDegs'],dtype= np.float64)) 
+    ballExpansionRate_fr = np.hstack([0 ,ballExpansionRate_fr])  / proc['frameTime'].diff()
     proc['ballExpansionRate'] = ballExpansionRate_fr
 
     ballVelLeadingEdge_fr = ballVel_fr + ballExpansionRate_fr
@@ -642,11 +642,11 @@ def filterAndDiffSignals(sessionDict):
 
     proc['gazeVelRelBallEdges'] = ((proc['gazeVelFilt'] - ballVelTrailingEdge_fr) / ballVelLeadingEdge_fr)
 
-    ballVel_az = np.diff(np.array(proc['ball_az'],dtype= np.float64)) / frameDur
-    proc['ballVel_az'] = np.hstack([0 ,ballVel_az])
+    ballVel_az = np.diff(np.array(proc['ball_az'],dtype= np.float64))
+    proc['ballVel_az'] = np.hstack([0 ,ballVel_az])  / proc['frameTime'].diff()
 
-    ballVel_el = np.diff(np.array(proc['ball_el'],dtype= np.float64)) / frameDur
-    proc['ballVel_el'] = np.hstack([0 ,ballVel_az])
+    ballVel_el = np.diff(np.array(proc['ball_el'],dtype= np.float64))
+    proc['ballVel_el'] = np.hstack([0 ,ballVel_az])  / proc['frameTime'].diff()
 
     sessionDict['processedExp'] = proc
 
@@ -888,6 +888,249 @@ def vectorMovementModel( sessionDict):
 
     return sessionDict
 
+def plotMovementModel(tr,
+                   trInfo,
+                      analysisParameters,
+                  halfHFOVDegs = 80,
+                     figSize = [7,7]):
+    
+    import matplotlib.pyplot as plt
+    
+    p = plt.figure(figsize=(figSize))
+
+    grid = plt.GridSpec(3, 2, wspace=0.4, hspace=0.3)
+    ax = p.add_subplot(grid[:2,:2])
+    ax2 = p.add_subplot(grid[2,:])
+    
+    ax.set(xlabel='degrees azimuth', ylabel='degrees elevation')
+    ax2.set(xlabel='time (s)', ylabel='velocity (degrees)')
+    
+    #######
+    
+    # Calculate events 
+    winStartTimeMs = analysisParameters['analysisWindowStart']
+    winEndTimeMs = analysisParameters['analysisWindowEnd']
+    interpResS = analysisParameters['interpResS']
+    
+    trialTime_fr = np.array(tr['frameTime'],np.float64) - np.array(tr['frameTime'],np.float64)[0]
+    interpTime_s = np.arange(0,trialTime_fr[-1],interpResS)
+
+    # Analysis should focus on the frames before ball collision or passing
+    initTTC = np.float64(trInfo['ballInitialPos','z']) / -np.float64(trInfo['ballInitialVel','z'])
+    endFrameIdx = np.where( trialTime_fr > initTTC )[0][0]
+    lastTrajFrame = np.min([int(endFrameIdx),
+               int(trInfo[('passVertPlaneAtPaddleFr', '')])])
+
+    analysisTime_fr = np.array(tr['frameTime'],np.float64)[:lastTrajFrame] - np.array(tr['frameTime'],np.float64)[0]
+
+    # Interpolate
+
+    interpBallAz_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['ball_az'][:lastTrajFrame],dtype=np.float64))
+    interpBallEl_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['ball_el'][:lastTrajFrame],dtype=np.float64))
+
+    interpGazeAz_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['cycGIWFilt_az'][:lastTrajFrame],dtype=np.float64))
+    interpGazeEl_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['cycGIWFilt_el'][:lastTrajFrame],dtype=np.float64))
+
+    cycToBallVelAz_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['ballVel_az'][:lastTrajFrame],dtype=np.float64))
+    cycToBallVelEl_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['ballVel_el'][:lastTrajFrame],dtype=np.float64))
+
+    ballRadiusDegs_s = np.interp(interpTime_s,analysisTime_fr,np.array(tr['ballRadiusDegs'][:lastTrajFrame],dtype=np.float64))
+
+    gazeVelFilt_s = np.interp(interpTime_s,analysisTime_fr,tr['gazeVelFilt'][:lastTrajFrame])
+
+    ########################################
+    #### Interpolated event times
+
+    # Win start/end relative to initial TTC
+    winStartSampleIdx = np.where( interpTime_s > initTTC + winStartTimeMs/1000.0 )[0][0]
+    winEndSampleIdx = np.where( interpTime_s > initTTC + winEndTimeMs/1000.0 )[0][0] - 1
+
+    passingTime = trialTime_fr[int(trInfo[('passVertPlaneAtPaddleFr', '')])]
+    passingSampleIdx = np.where( interpTime_s > passingTime)[0][0]
+
+    # If passing sample idx < window end, raise error
+    if( passingSampleIdx < winEndSampleIdx):
+        logger.warn('Ball collision occurs within analysis window!')
+
+    # Find where the ball / gaze actually ended up
+    ballWinStart_AzEl = [interpBallAz_s[winStartSampleIdx], interpBallEl_s[winStartSampleIdx]]
+    ballWinEnd_AzEl = [interpBallAz_s[winEndSampleIdx], interpBallEl_s[winEndSampleIdx]]
+    gazeWinStart_AzEl = [interpGazeAz_s[winStartSampleIdx], interpGazeEl_s[winStartSampleIdx]]
+    gazeWinEnd_AzEl = [interpGazeAz_s[winEndSampleIdx], interpGazeEl_s[winEndSampleIdx]]
+    
+    
+    #######
+    
+#     initTTC = np.float64(trInfo['ballInitialPos','Z']) / -np.float64(trInfo['ballInitialVel','Z'])
+    endSampleIdx = np.where( interpTime_s > initTTC )[0][0]-1
+
+    # Win start/end
+    winStartSampleIdx = np.where( interpTime_s > initTTC + winStartTimeMs/1000.0 )[0][0]
+    winEndSampleIdx = np.where( interpTime_s > initTTC + winEndTimeMs/1000.0 )[0][0] -1
+
+    if( passingSampleIdx < winEndSampleIdx):  
+        winEndSampleIdx = passingSampleIdx
+
+    windowFr = np.arange(winStartSampleIdx,winEndSampleIdx)
+
+    ############
+
+    halfVFOVDegs = halfHFOVDegs / 1.77
+
+
+    cList = ['r','g','b']
+    lineHandles = []
+
+    ballH = ax.plot(interpBallAz_s[:endSampleIdx],interpBallEl_s[:endSampleIdx],color='b',linewidth=3,alpha = 0.4)
+    gazeH = ax.plot(interpGazeAz_s[:endSampleIdx],interpGazeEl_s[:endSampleIdx],color='r',linewidth=3,alpha = 0.4)
+
+    from matplotlib import patches as pt
+
+    # ax.add_patch(pt.Circle(ballAtWinEndVelPred_AzEl,radius=balllRadiusVel,
+    #             fill=False,facecolor=None,ec='k',lw=3))
+
+    ax.add_patch(pt.Circle(ballWinEnd_AzEl,radius=trInfo['ballRadiusWinEnd'],
+                 fill=False,facecolor=None,ec='k',lw=3))
+
+    ax.plot(interpBallAz_s[windowFr],interpBallEl_s[windowFr],color='b',linewidth=5, alpha = 0.6)
+    ax.plot(interpGazeAz_s[windowFr],interpGazeEl_s[windowFr],color='r',linewidth=5,alpha = 0.6)
+
+    for i in np.arange(0,len(windowFr),5):
+        pf = windowFr[i]
+        xs = [interpBallAz_s[pf], interpGazeAz_s[pf]]
+        ys = [interpBallEl_s[pf], interpGazeEl_s[pf]]
+        ax.plot(xs,ys,color='k',linewidth=1,alpha = 0.3)
+
+    cOrM = []
+    if (trInfo['isCaughtQ'].values == True):
+
+        cOrM = ax.scatter(tr['ball_az'].iloc[lastTrajFrame-1],
+                          tr['ball_el'].iloc[lastTrajFrame-1],
+                          c='g',s=120,marker='8',lw=6) 
+    else:
+
+        cOrM = ax.scatter(tr['ball_az'].iloc[lastTrajFrame-1],
+                          tr['ball_el'].iloc[lastTrajFrame-1],
+                          c='r',s=150,marker='8',lw=6)
+        
+    ax.axis('equal')
+    ax.axes.spines['top'].set_visible(False)
+    ax.axes.spines['right'].set_visible(False)
+    ax.axes.yaxis.grid(True)
+    ax.axes.xaxis.grid(True)
+    p.set_facecolor('w')
+
+    plt.xlim([-30,30])
+    plt.ylim([-15,35])
+
+    observedH = ax.scatter(ballWinEnd_AzEl[0],ballWinEnd_AzEl[1],c='k',s=150,marker='8')
+    constantVelH = ax.scatter(trInfo['ballAtWinEndVelPred_AzEl'].values[0][0],
+                              trInfo['ballAtWinEndVelPred_AzEl'].values[0][1],c='k',s=150,marker='v')
+    
+    gazeLoc = ax.scatter(trInfo['gazeMinDistLoc_AzEl'].values[0][0],
+                         trInfo['gazeMinDistLoc_AzEl'].values[0][1],c='m',s=150,marker='x',lw=6)
+
+    ax.text(.01,.01,str('NormLoc: {:.2}').format(trInfo['normLocInWindow'].values[0]),transform=ax.transAxes)
+#     ax.text(.01,.04,str('Expansion gain: {}').format(np.float64(trInfo['expansionGain'].values)),transform=ax.transAxes)
+    ax.text(.01,.07,str('Sub: {} Bl: {} Tr: {}').format(
+        int(trInfo['subjectNumber']), 
+        int(trInfo['blockNumber']),
+        int(trInfo['trialNumber'])
+    ),transform=ax.transAxes)
+    
+    ax.legend([gazeLoc,
+               constantVelH,
+               observedH,
+               cOrM], 
+
+              ['point nearest to gaze',
+               'constant speed model',
+               'actual displacement',
+              'green=catch, red=miss'])
+    
+
+    #######################################################
+    #######################################################
+    ## Velocity
+    
+    trialTime_fr = np.array(tr['frameTime'] - tr['frameTime'].iloc[0])
+    initTTC = np.float64(trInfo['ballInitialPos','z']) / -np.float64(trInfo['ballInitialVel','z'])
+    winStartTimeMs = analysisParameters['analysisWindowStart']
+    winEndTimeMs = analysisParameters['analysisWindowEnd']
+    winStartFrameIdx = np.where( trialTime_fr > initTTC + winStartTimeMs/1000.0 )[0][0]
+    winEndFrameIdx = np.where( trialTime_fr > initTTC + winEndTimeMs/1000.0 )[0][0] -1
+
+
+    
+    ax2.set_ylim([-100,300])
+    ax2.set_xlim(trialTime_fr[winStartFrameIdx],trialTime_fr[winEndFrameIdx])
+    
+    gaze = ax2.plot(trialTime_fr,
+            tr['gazeVelFilt']
+            ,color='r',linewidth=3,alpha = .5,label='gaze')
+
+    ballCenter = ax2.plot(trialTime_fr,
+            tr['ballVel2D_fr']
+            ,color='b',linewidth=3,alpha = 0.5,label='ball center')
+
+    ballLeading = ax2.plot(trialTime_fr,
+            tr['ballVelLeadingEdge']
+            ,color='k',linewidth=3,alpha = 0.4,label='ball leading')
+
+    ballTrailing = ax2.plot(trialTime_fr,
+            tr['ballVelTrailingEdge']
+            ,color='k',linewidth=3,alpha = 0.4,label='ball trailing')
+
+    ax3 = ax2.twinx()  # instantiate a second axes that shares the same x-axis
+    ax3.set_ylim([-1,1])
+    ratio = ax3.plot(trialTime_fr,
+            tr['gazeVelRelBallEdges']
+            ,color='c',linewidth=3,alpha = 0.4,label='ratio')
+    
+    ax3.axhline( .5 )
+    ax3.axhline( 0 )
+
+    ax2.legend()
+    ax3.legend()
+    
+    
+    return(p,ax)
+
+
+
+def saveOutVectorMovementModel(sessionDict):
+    
+    analysisParameters = sessionDict['analysisParameters']
+
+    gbData_bl_tr = sessionDict['processedExp'].groupby(['blockNumber','trialNumber']) 
+    gbInfo_bl_tr = sessionDict['trialInfo'].groupby(['blockNumber','trialNumber']) 
+
+
+    for idx, trDataGb in gbData_bl_tr:
+
+        blNum = np.unique(trDataGb['blockNumber'])[0]
+        trNum = np.unique(trDataGb['trialNumber'])[0]
+
+        trInfoGb = gbInfo_bl_tr.get_group((blNum,trNum)) 
+
+        (p,ax) = plotMovementModel(trDataGb,
+                      trInfoGb,
+                      sessionDict['analysisParameters'],
+                      halfHFOVDegs = 80,
+                      figSize = [7,7])
+
+    #     condStr = 'g-{:.1f}_pd-{:1.1f}'.format(float(trInfo['expansionGain']),float(trInfo['passingLocX']))
+
+        condStr = 'g-{:.1f}_pd-{:1.1f}'.format(np.float64(111),np.float64(222))
+        outDir = '../Figures/Projections/' + condStr + '/' + sessionDict['subID'] + '/'
+
+        if not os.path.exists(outDir):
+            os.makedirs(outDir)
+
+        fName = str(outDir + 'b-{}_t-{}_' + condStr + '.png').format(blNum,trNum)
+
+        plt.savefig(fName)
+        plt.close()
 
 # def calcCalibrationQuality(sessionDictIn):
 
@@ -996,7 +1239,8 @@ def processSingleSession(subNum, doNotLoad=False):
     sessionDict = calcTrackingError(sessionDict)
     sessionDict = filterAndDiffSignals(sessionDict)
     sessionDict = vectorMovementModel(sessionDict)
-    
+    sessionDict = saveOutVectorMovementModel(sessionDict)
+
     # sessionDict = calcCalibrationQuality(sessionDict,analysisParameters)
 
     # sessionDict = loadTemp()
