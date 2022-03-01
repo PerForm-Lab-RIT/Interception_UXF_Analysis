@@ -10,6 +10,7 @@
 
     "medFiltSize": 5,
     "interpResS": 0.001,
-    "filterParameters": [3,3]
+    "filterParameters": [3,3],
+    "confidenceThreshold": 0.8
 
 }

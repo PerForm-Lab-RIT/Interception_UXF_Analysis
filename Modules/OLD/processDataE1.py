@@ -170,6 +170,28 @@ def calcCycEIH(sessionDictIn):
 
 	return sessionDictIn
 
+def calc_gaze_Normal2(rowIn):
+
+    def checkNans(vecIn):
+
+        numNans = np.sum(np.isnan(np.array(vecIn,dtype=np.float64)))
+
+        if numNans == 3:
+            return True
+        else: 
+            return False
+
+    if( checkNans(rowIn['gaze-normal0']) & checkNans(rowIn['gaze-normal1']) ):
+       
+       return (np.nan,np.nan,np.nan)
+    else:
+
+        gaze_normal2 = np.nanmean([rowIn['gaze-normal0'], rowIn['gaze-normal1']],axis=0)
+        gaze_normal2 = gaze_normal2 / np.linalg.norm(gaze_normal2)
+        return tuple(gaze_normal2)
+
+
+
 def calcGIW(sessionDictIn):
 
 	proc = sessionDictIn['processed']

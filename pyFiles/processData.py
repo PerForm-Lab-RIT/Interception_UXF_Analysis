@@ -19,11 +19,32 @@ logger = logging.getLogger(__name__)
 
 from loadData import unpackSession
 
+
+
+def flipGazeElevation(sessionDict):
+    
+    sessionDict['processedExp'][('gaze-normal0','y')] = -sessionDict['processedExp'][('gaze-normal0','y')]
+    sessionDict['processedCalib'][('gaze-normal0','y')] = -sessionDict['processedCalib'][('gaze-normal0','y')]
+    
+    sessionDict['processedExp'][('gaze-normal1','y')] = -sessionDict['processedExp'][('gaze-normal1','y')]
+    sessionDict['processedCalib'][('gaze-normal1','y')] = -sessionDict['processedCalib'][('gaze-normal1','y')]
+
+    sessionDict['processedExp'][('gaze-point-3d','y')] = -sessionDict['processedExp'][('gaze-point-3d','y')]
+    sessionDict['processedCalib'][('gaze-point-3d','y')] = -sessionDict['processedCalib'][('gaze-point-3d','y')]
+    
+    logger.info('Mirroring sessionDict[\'processedExp\'][\'gaze-normal0_y\']')
+    logger.info('Mirroring sessionDict[\'processedCalib\'][\'gaze-normal0_y\']')
+    logger.info('Mirroring sessionDict[\'processedExp\'][\'gaze-normal1_y\']')
+    logger.info('Mirroring sessionDict[\'processedCalib\'][\'gaze-normal1_y\']')
+    logger.info('Mirroring sessionDict[\'processedExp\'][\'gaze-point-3d_y\']')
+    logger.info('Mirroring sessionDict[\'processedCalib\'][\'gaze-point-3d_y\']')
+    
+
+    return sessionDict
+
 def calcCatchingPlane(sessionDict):
 
     paddleDf = pd.DataFrame()
-    # paddleDf.index.name = 'frameNum'
-
     proc = sessionDict['processedExp']
 
     ########################################################
@@ -250,29 +271,139 @@ def gazeAnalysisWindow(sessionDict, analyzeUntilXSToArrival =  .3, stopAtXSToArr
 
     return sessionDict
 
-def calcGIW(sessionDictIn):
+# gaze_normal2_xyz = np.nanmean([sessionDict['processedExp']['gaze-normal0'], sessionDict['processedExp']['gaze-normal1']],axis=0)
+# np.divide(gaze_normal2_xyz,np.linalg.norm(gaze_normal2_xyz,axis=1))
 
-    def calcGIW(rowIn):
-        
-        a =  rowIn['gaze-point-3d'] - rowIn['cameraPos']
-        cycGIWDir_XYZ = a / np.linalg.norm(a)
-        return {('cycGIWDir','x'): cycGIWDir_XYZ[0],('cycGIWDir','y'): cycGIWDir_XYZ[1],('cycGIWDir','z'): cycGIWDir_XYZ[2]}
 
-    cycGIWDf = sessionDictIn['processedExp'].apply(lambda rowIn: calcGIW(rowIn),axis=1)
-    cycGIWDf = pd.DataFrame.from_records(cycGIWDf)
-    cycGIWDf.columns = pd.MultiIndex.from_tuples(cycGIWDf.columns)
 
-    sessionDictIn['processedExp'] = sessionDictIn['processedExp'].join(cycGIWDf)
+def filterGazeDataByConfidence(sessionDictIn):
 
-    logger.info('Added sessionDict[\'processedExp\'][\'cycGIWDir\']')
+    confidenceThreshold = sessionDictIn['analysisParameters']['confidenceThreshold']
+
+    def setToNan(dataFrameIn, columnLev1,idx):
+
+        columnLev2List = list(dataFrameIn[columnLev1].columns)
+
+        for columnLev2 in columnLev2List:
+
+            data = np.array(dataFrameIn[(columnLev1,columnLev2)],dtype=np.float64)
+            data[idx] = np.nan
+            dataFrameIn[(columnLev1,columnLev2)] = data
+
+        return dataFrameIn
+
+    idx = np.where(sessionDictIn['processedExp']['confidence'] < confidenceThreshold)
+    setToNan(sessionDictIn['processedExp'], 'gaze-normal0', idx)
+    setToNan(sessionDictIn['processedExp'], 'gaze-normal1', idx)
+    
+    idx = np.where(sessionDictIn['processedCalib']['confidence'] < confidenceThreshold)
+    setToNan(sessionDictIn['processedCalib'], 'gaze-normal0', idx)
+    setToNan(sessionDictIn['processedCalib'], 'gaze-normal1', idx)
+    
+    logger.info('Filtered sessionDict[\'processedExp\'][\'gaze-normal0\'] by confidence threshold of ' + str(confidenceThreshold))
+    logger.info('Filtered sessionDict[\'processedExp\'][\'gaze-normal1\'] by confidence threshold of ' + str(confidenceThreshold))
+    logger.info('Filtered sessionDict[\'processedCalib\'][\'gaze-normal0\'] by confidence threshold of ' + str(confidenceThreshold))
+    logger.info('Filtered sessionDict[\'processedCalib\'][\'gaze-normal1\'] confidence threshold of ' + str(confidenceThreshold))
+    
     return sessionDictIn
 
-def flipGazeElevation(sessionDict):
 
-    sessionDict['processedExp'][('cycGIWDir','y')] = -sessionDict['processedExp'][('cycGIWDir','y')]
-    logger.info('Mirroring sessionDict[\'processedExp\'][\'cycGIWDir_y\']')
+def calc_gaze_Normal2(sessionDictIn):
+    
+    '''
+    For each row, applies nanmean to gaze-normal0 and gaze-normal1 to calculate gaze-normal2.
+    gaze-normal0 is normalized.
+    This means that the gaze vector may switch from monocular to the binocular avg on a per-frame basis.
+    '''
 
-    return sessionDict
+        
+    def avgMonoGaze_ByRow(rowIn):
+
+        def checkNans(vecIn):
+
+            numNans = np.sum(np.isnan(np.array(vecIn,dtype=np.float64)))
+
+            if numNans == 3:
+                return True
+            else: 
+                return False
+
+        if( checkNans(rowIn['gaze-normal0']) & checkNans(rowIn['gaze-normal1']) ):
+
+            return {('gaze_normal2','x'): np.nan,('gaze_normal2','y'): np.nan,('gaze_normal2','z'): np.nan}
+
+        else:
+
+            xyz = np.nanmean([rowIn['gaze-normal0'], rowIn['gaze-normal1']],axis=0)
+            xyz = xyz / np.linalg.norm(xyz)
+
+            return {('gaze_normal2','x'): xyz[0],('gaze_normal2','y'): xyz[1],('gaze_normal2','z'): xyz[2]}
+    
+    def avgGazeForDataFrame(sessionDictIn, dataFrameKey):
+        # If the column already exists, remove it and recalculate.
+        if 'gaze_normal2' in sessionDictIn[dataFrameKey].columns:
+            sessionDictIn[dataFrameKey].drop("gaze_normal2", axis=1, level=0,inplace=True)
+
+        # Average per row
+        dictListOut = sessionDictIn[dataFrameKey].apply(lambda row: avgMonoGaze_ByRow(row),axis=1)
+
+        # Convert to dataframe and join with sessionDict
+        dfOut = pd.DataFrame.from_records(dictListOut)
+        dfOut.columns = pd.MultiIndex.from_tuples(dfOut.columns)
+        sessionDictIn[dataFrameKey] = sessionDictIn[dataFrameKey].join(dfOut)
+        
+        return sessionDictIn
+        
+    
+    sessionDictIn = avgGazeForDataFrame(sessionDictIn,'processedExp')
+    sessionDictIn = avgGazeForDataFrame(sessionDictIn,'processedCalib')
+    
+    return sessionDictIn
+
+
+def calcCycGIWDir(sessionDictIn):
+
+    def calcGIW_ByRow(rowIn):
+        # Grab gransformation matrix
+        headTransform_4x4 = np.reshape(rowIn['camera'].values,[4,4])
+
+        # Grab cyc EIH direction
+        cycEyeInHead_XYZ = rowIn['gaze_normal2']
+
+        # Add a 1 to convert to homogeneous coordinates
+        cycEyeInHead_XYZW = np.hstack( [cycEyeInHead_XYZ,1])
+
+        # Take the dot product!
+        cycGIWVec_XYZW = np.dot( headTransform_4x4,cycEyeInHead_XYZW)
+
+        # # Now, convert into a unit direction vector from the cyclopean eye in world coordinates
+        # # Also, we can discard the w term
+        cycGIWDir_XYZ = (cycGIWVec_XYZW[0:3]-rowIn["cameraPos"]) / np.linalg.norm((cycGIWVec_XYZW[0:3]-rowIn["cameraPos"]))
+
+        # # You must return as a list or a tuple
+        # #return list(cycGIWDir_XYZ)
+        return {('cycGIWDir','x'): cycGIWDir_XYZ[0],('cycGIWDir','y'): cycGIWDir_XYZ[1],('cycGIWDir','z'): cycGIWDir_XYZ[2]}
+    
+    def calcGIWForDataframe(sessionDictIn, dataFrameKey):
+
+        # If the column already exists, remove it and recalculate.    
+        if 'cycGIWDir' in sessionDictIn[dataFrameKey].columns:
+            sessionDictIn[dataFrameKey].drop("cycGIWDir", axis=1, level=0,inplace=True)
+
+        # Average per row
+        dictListOut = sessionDictIn[dataFrameKey].apply(lambda row: calcGIW_ByRow(row),axis=1)
+
+        # Convert to dataframe and join with sessionDict
+        dfOut = pd.DataFrame.from_records(dictListOut)
+        dfOut.columns = pd.MultiIndex.from_tuples(dfOut.columns)
+        sessionDictIn[dataFrameKey] = sessionDictIn[dataFrameKey].join(dfOut)
+        return sessionDictIn
+    
+    sessionDictIn = calcGIWForDataframe(sessionDictIn, 'processedExp')
+    sessionDictIn = calcGIWForDataframe(sessionDictIn, 'processedCalib')
+    
+    return sessionDictIn
+
 
 def calcCycToBallVector(sessionDict):
 
@@ -297,7 +428,43 @@ def calcCycToBallVector(sessionDict):
 
 def calcSphericalcoordinates(sessionDict):
 
+    def calcTargetAzEl(row):
+    
+        x = row['targeLocalPos','x']
+        y = row['targeLocalPos','y']
+        z = row['targeLocalPos','z']
+        
+        az = np.rad2deg(np.arctan(np.divide(x,z)))
+        el = np.rad2deg(np.arctan(np.divide(y,z)))
+        
+        #Note that the .apply requires you return a single data structure, 
+        #so a SINGLE tuple is OK, but the seperate values for az/el are not OK.
+        
+        return (az,el) 
+    
+    # first, targetInHead_az and targetInHead_el
+
+    proc = sessionDict['processedCalib']
+    ballAzEl = proc.apply(lambda arbitraryRowName: calcTargetAzEl(arbitraryRowName),axis=1)
+    proc['targetInHead_az'],proc['targetInHead_el'] = zip(*ballAzEl)
+
+    # Now, target az and el in the world frame
+
+    cycToTargetVec = np.array(proc['targetPos'] - proc['cameraPos'],dtype= np.float64 )
+    cycToTargetDir = np.array([np.divide(XYZ,np.linalg.norm(XYZ)) for XYZ in cycToTargetVec],dtype= np.float64)
+
+    proc['targetInWorld_az'] = np.rad2deg(np.arctan(cycToTargetDir[:,0]/cycToTargetDir[:,2]))
+    proc['targetInWorld_el'] = np.rad2deg(np.arctan(cycToTargetDir[:,1]/cycToTargetDir[:,2]))
+
+    logger.info('Added sessionDict[\'processedCalib\'][\'targetInHead_az\']')
+    logger.info('Added sessionDict[\'processedCalib\'][\'targetInHead_el\']')
+    logger.info('Added sessionDict[\'processedCalib\'][\'targetInWorld_az\']')
+    logger.info('Added sessionDict[\'processedCalib\'][\'targetInWorld_el\']')
+
+    sessionDict['processedCalib'] = proc
+
     proc = sessionDict['processedExp']
+
     sessionDict['processedExp']['cycGIW_az'] = np.rad2deg(np.arctan(proc[('cycGIWDir','x')]/proc[('cycGIWDir','z')]))
     sessionDict['processedExp']['cycGIW_el']  = np.rad2deg(np.arctan(proc[('cycGIWDir','y')]/proc[('cycGIWDir','z')]))
 
@@ -306,11 +473,11 @@ def calcSphericalcoordinates(sessionDict):
 
     logger.info('Added sessionDict[\'processedExp\'][\'ball_az\']')
     logger.info('Added sessionDict[\'processedExp\'][\'ball_el\']')
+
     logger.info('Added sessionDict[\'processedExp\'][\'cycGIW_az\']')
     logger.info('Added sessionDict[\'processedExp\'][\'cycGIW_el\']')
 
     return sessionDict
-
 
 
 def calcTrackingError(sessionDict):
@@ -807,17 +974,23 @@ def processSingleSession(subNum, doNotLoad=False):
 
     sessionDict = unpackSession(subNum, doNotLoad)
 
+    sessionDict = flipGazeElevation(sessionDict)  # Y axis is flipped in PL space
+    
     sessionDict = calcCatchingPlane(sessionDict)
-
     sessionDict = findLastFrame(sessionDict)
     sessionDict = calcCatchingError(sessionDict)
     sessionDict = gazeAnalysisWindow(sessionDict)
-    sessionDict = calcGIW(sessionDict)
-    sessionDict = flipGazeElevation(sessionDict)
+
+    sessionDict = filterGazeDataByConfidence(sessionDict)
+    
+    sessionDict = calc_gaze_Normal2(sessionDict)
+    sessionDict = calcCycGIWDir(sessionDict)
+    
+    
 
     sessionDict = calcCycToBallVector(sessionDict)
     sessionDict = calcSphericalcoordinates(sessionDict)  # of ball and gaze
-
+    
     sessionDict = calcBallAngularSize(sessionDict)
 
     sessionDict = calcTrackingError(sessionDict)
@@ -834,7 +1007,7 @@ def processSingleSession(subNum, doNotLoad=False):
 
 if __name__ == "__main__":
     
-    (sessionList,allTrialData) = processAllSesssions(doNotLoad=False)
+    (sessionList,allTrialData) = processAllSesssions(doNotLoad=True)
 
     
     
