@@ -1032,8 +1032,8 @@ def plotMovementModel(tr,
 
     ax.text(.01,.01,str('NormLoc: {:.2}').format(trInfo['normLocInWindow'].values[0]),transform=ax.transAxes)
 #     ax.text(.01,.04,str('Expansion gain: {}').format(np.float64(trInfo['expansionGain'].values)),transform=ax.transAxes)
-    ax.text(.01,.07,str('Sub: {} Bl: {} Tr: {}').format(
-        int(trInfo['subjectNumber']), 
+    
+    ax.text(.01,.07,str('Bl: {} Tr: {}').format(
         int(trInfo['blockNumber']),
         int(trInfo['trialNumber'])
     ),transform=ax.transAxes)
@@ -1094,6 +1094,7 @@ def plotMovementModel(tr,
     ax3.legend()
     
     
+    
     return(p,ax)
 
 
@@ -1132,41 +1133,90 @@ def saveOutVectorMovementModel(sessionDict):
         plt.savefig(fName)
         plt.close()
 
-# def calcCalibrationQuality(sessionDictIn):
+    
+    return sessionDict
 
-# 	sessionDictIn = calcCalibrationVectors(sessionDictIn)
 
-# 	calibDf = sessionDictIn['processedCalib']
-# 	gb_tIdx = calibDf.groupby('calibrationCounter')
-# 	targetList = list(calibDf.groupby('calibrationCounter').groups.keys())
+def plotTrackQuality(sessionDictIn):
 
-# 	numTargets = len(targetList)
+    p, ax = plt.subplots(1, 1) #sharey=True)
+    p.set_size_inches(8,8)
+    
+    cList = ['r','g','b']
+    lineHandles = []
 
-# 	gazePos_azEl_tIdx = np.zeros([2,numTargets])
-# 	targPos_azEl_tIdx  = np.zeros([2,numTargets])
-# 	calibError_tIdx = np.zeros([numTargets])
-# 	stdCalibError_tIdx = np.zeros([numTargets])
+    offsets = np.linspace(-.01,.01,3)
 
-# 	for targetKey, data in gb_tIdx:
+    calibProc_gbBlock_Trial = sessionDictIn['processedCalib'].groupby(['blockNumber','trialNumber'])
+    trInfo_gbBlock = sessionDictIn['trialInfo'].groupby(['blockNumber'])
 
-# 		tIdx  = [i for i, s in enumerate(targetList) if targetKey == s]
+    # Iterate through blocks
+    for idx, trInfoInBlock in trInfo_gbBlock:
 
-# 		gazePos_azEl_tIdx[0,tIdx] = np.nanmean(data['cycEyeInHead_az'])
-# 		gazePos_azEl_tIdx[1,tIdx] = np.nanmean(data['cycEyeInHead_el'])
+            blNum = int(trInfoInBlock.iloc[0]['blockNumber'])
 
-# 		targPos_azEl_tIdx[0,tIdx] = np.nanmean(data['targetInHead_az'])
-# 		targPos_azEl_tIdx[1,tIdx] = np.nanmean(data['targetInHead_el'])
+            # Iterate through rows
+            if( np.unique(trInfoInBlock['trialType'])[0] == "CalibrationAssessment" ):
+                
+                for trIdx, thisTrInfo in trInfoInBlock.iterrows():
 
-# 		calibError_tIdx[tIdx] = np.nanmean(data['calibErr'])
-# 		stdCalibError_tIdx[tIdx] = np.nanstd(data['calibErr'])
+                    trNum = thisTrInfo['trialNumber'].iloc[0]
 
-# 	sessionDictIn['calibrationData'] = pd.DataFrame(dict(gazePos_az = gazePos_azEl_tIdx[0,:],
-# 				  gazePos_el = gazePos_azEl_tIdx[1,:],
-# 				  targetPos_az = targPos_azEl_tIdx[0,:],
-# 				  targetPos_el = targPos_azEl_tIdx[1,:],
-# 				  meanCalibError = calibError_tIdx))
+                    # Get rows of this trial from sessionDict['processedCalib']
+                    tr = calibProc_gbBlock_Trial.get_group((blNum, trNum))    
 
-# 	return sessionDictIn
+                    # Targets
+                    xx = thisTrInfo[('targetSphericalPosInHead','az')]
+                    yy = thisTrInfo[('targetSphericalPosInHead','el')]
+                    hT = ax.scatter(xx, yy,s=50,c='b')
+                    hT.set_label('target')
+
+                    gazeAz_fr = np.rad2deg(np.arctan2(tr['gaze_normal2']['x'], tr['gaze_normal2']['z'] ))
+                    gazeEl_fr = np.rad2deg(np.arctan2(tr['gaze_normal2']['y'], tr['gaze_normal2']['z'] ))
+
+                    hT = ax.scatter(gazeAz_fr,gazeEl_fr,s=5)
+
+                    meanGazeAz = thisTrInfo[('gazeSphericalPosInHead','az')] 
+                    meanGazeEl = thisTrInfo[('gazeSphericalPosInHead','el')] 
+
+                    stdGazeAz = thisTrInfo[('assessmentErr','az')]
+                    stdGazeEl = thisTrInfo[('assessmentErr','el')]
+
+                    ax.errorbar(meanGazeAz, meanGazeEl, stdGazeAz, stdGazeEl,c='k',elinewidth=2)
+                    ax.scatter(meanGazeAz, meanGazeEl,s=20,c='k')
+
+                    vPos = np.max([meanGazeEl,yy])
+                    textStr = '   %1.2f$^\circ$ (%1.2f$^\circ$)'%(thisTrInfo['accuracy'],thisTrInfo['precision'])
+                    hErr = ax.text(xx,vPos+1.5, textStr,horizontalalignment='center',size=10)
+
+
+                ax.set_ylabel('elevation (degrees)', fontsize=12)
+                ax.set_xlabel('azimuth (degrees)', fontsize=12)
+                ax.tick_params(axis='both', which='major', labelsize=12)
+
+                ax.set_ylim([-25,25])
+                ax.set_xlim([-25,25])
+                
+                ax.axes.yaxis.grid(True)
+                ax.axes.xaxis.grid(True)
+                ax.axes.set_axisbelow(True)
+
+                plt.rcParams["font.family"] = "sans-serif"
+                p.set_facecolor('w')
+
+                outDir = '../Figures/CalibQual/' + sessionDictIn['subID'] + '/'
+
+                if not os.path.exists(outDir):
+                    os.makedirs(outDir)
+
+                fName = str(outDir + 'b-{}_' + '.png').format(blNum)
+
+                plt.savefig(fName)
+                plt.close()
+
+    return sessionDictIn
+
+
 
 
 def saveTemp(sessionDict):
@@ -1228,8 +1278,6 @@ def processSingleSession(subNum, doNotLoad=False):
     
     sessionDict = calc_gaze_Normal2(sessionDict)
     sessionDict = calcCycGIWDir(sessionDict)
-    
-    
 
     sessionDict = calcCycToBallVector(sessionDict)
     sessionDict = calcSphericalcoordinates(sessionDict)  # of ball and gaze
@@ -1252,13 +1300,3 @@ def processSingleSession(subNum, doNotLoad=False):
 if __name__ == "__main__":
     
     (sessionList,allTrialData) = processAllSesssions(doNotLoad=True)
-
-    
-    
-
-    
-
-    
-
-    
-

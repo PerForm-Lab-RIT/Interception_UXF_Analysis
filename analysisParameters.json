@@ -11,6 +11,7 @@
     "medFiltSize": 5,
     "interpResS": 0.001,
     "filterParameters": [3,3],
-    "confidenceThreshold": 0.8
+    "confidenceThreshold": 0.8,
+    "warnIfAssessmentTrialsNSecondsApart":  5.0
 
 }
