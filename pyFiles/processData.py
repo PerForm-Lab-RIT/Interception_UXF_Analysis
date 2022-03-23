@@ -1123,7 +1123,7 @@ def saveOutVectorMovementModel(sessionDict):
     #     condStr = 'g-{:.1f}_pd-{:1.1f}'.format(float(trInfo['expansionGain']),float(trInfo['passingLocX']))
 
         condStr = 'g-{:.1f}_pd-{:1.1f}'.format(np.float64(111),np.float64(222))
-        outDir = '../Figures/Projections/' + condStr + '/' + sessionDict['subID'] + '/'
+        outDir = 'Figures/Projections/' + condStr + '/' + sessionDict['subID'] + '/'
 
         if not os.path.exists(outDir):
             os.makedirs(outDir)
@@ -1137,13 +1137,159 @@ def saveOutVectorMovementModel(sessionDict):
     return sessionDict
 
 
-def plotTrackQuality(sessionDictIn):
+def runCalibrationAssessment(sessionDictIn):
 
-    p, ax = plt.subplots(1, 1) #sharey=True)
-    p.set_size_inches(8,8)
+    blockDistList = []
+    accuracy_tr = []
+    prec_tr = []
+    pctDropouts_tr = []
+    numDropouts_tr = []
+    azErr_tr = []
+    elErr_tr = []
+    targLocAz_tr = []
+    targLocEl_tr = []
+    meanGazeAz_tr = []
+    meanGazeEl_tr = []
+
+    calibProc_gbBlock_Trial = sessionDictIn['processedCalib'].groupby(['blockNumber','trialNumber'])
+
+    ############################################################
+    ############################################################
+    ## Iterate through assessment block
+
+    trInfo_gbBlock = sessionDictIn['trialInfo'].groupby(['blockNumber'])
+    # trInfo_gbBlock.get_group(1) # temp
+
+
+    for idx, trInfoInBlock in trInfo_gbBlock:
+
+    # trInfoInBlock = trialInfo_gbBlock.get_group(1)  # temp
+
+        blNum = int(trInfoInBlock.iloc[0]['blockNumber'])
+
+        if( np.unique(trInfoInBlock['trialType'])[0] != "CalibrationAssessment" ):
+
+            # these are not calibration trials, so fill the lists with nans
+
+            nanList_tr =  np.empty((1,len(trInfoInBlock)))[0]
+            nanList_tr[:] = np.nan
+
+            accuracy_tr.extend(nanList_tr)
+            prec_tr.extend(nanList_tr)
+            pctDropouts_tr.extend(nanList_tr)
+            numDropouts_tr.extend(nanList_tr)
+            azErr_tr.extend(nanList_tr)
+            elErr_tr.extend(nanList_tr)
+            targLocAz_tr.extend(nanList_tr)
+            targLocEl_tr.extend(nanList_tr)
+            meanGazeEl_tr.extend(nanList_tr)
+            meanGazeAz_tr.extend(nanList_tr)
+
+        else: 
+
+            # calibTrData = gbCalib.get_group((int(assTrial['blockNumber']), int(assTrial['trialNumber'])))
+
+            ## Check for assessment trials that were strangely far apart in time
+            startTimes = trInfoInBlock['startTime']
+            timeBetweenFixations = startTimes.diff().values
+
+            if(any(timeBetweenFixations > sessionDictIn['analysisParameters']['warnIfAssessmentTrialsNSecondsApart'])):
+                logger.warning('Note that assessment trials were spaced more than the duration threshold specified by sessionDict[\'analysisParameters\'][\'warnIfAssessmentTrialsNSecondsApart\'].')
+
+            ############################################################
+            ############################################################
+            ## Iterate through each trial in the block
+            for trIdx, thisTrInfo in trInfoInBlock.iterrows():
+
+                trNum = thisTrInfo['trialNumber'].iloc[0]
+
+                # Get rows of this trial from sessionDict['processedCalib']
+                tr = calibProc_gbBlock_Trial.get_group((blNum, trNum))
+
+                targetAz_fr = np.unique(tr['targetInHead_az'])
+                targetEl_fr = np.unique(tr['targetInHead_el'])
+
+                targLocAz_tr.append(targetAz_fr)
+                targLocEl_tr.append(targetEl_fr)
+
+                ## Check for multiple target locations within a single trial
+                if ( len(np.unique(targetAz_fr)) > 1 or len(np.unique(targetAz_fr)) > 1 ):
+                    logger.error('A single assessment trial has more than one target location.')
+
+                # Robustness
+                numDropouts = np.sum(tr.apply(lambda row: np.sum( row['gaze_normal2'].isnull()) > 0 ,axis=1)) - 1
+                numDropouts_tr.append(numDropouts)
+
+                # -1 because the first  frame is always nans
+                pctDropouts = numDropouts  / len(tr)
+                pctDropouts_tr.append(pctDropouts)
+
+                # Mean gaze loc
+                gazeAz_fr = np.rad2deg(np.arctan2(tr['gaze_normal2']['x'], tr['gaze_normal2']['z'] ))
+                gazeEl_fr = np.rad2deg(np.arctan2(tr['gaze_normal2']['y'], tr['gaze_normal2']['z'] ))
+
+                meanGazeAz_tr.append(np.nanmean(gazeAz_fr))
+                meanGazeEl_tr.append(np.nanmean(gazeEl_fr))
+                
+                # Accuracy
+                acc_fr = np.sqrt((gazeAz_fr - targetAz_fr)**2 + (gazeEl_fr - targetEl_fr)**2)
+                accuracy_tr.append(np.nanmean(acc_fr))
+
+                # Precision
+                prec_fr = np.sqrt( (np.nanmean(gazeAz_fr) - gazeAz_fr)**2 + (np.nanmean(gazeEl_fr) - gazeEl_fr)**2)
+                prec_tr.append(np.nanmean(prec_fr))
+
+                # Err in Y and X direction
+                azErr_tr.append(np.nanstd(gazeAz_fr))
+                elErr_tr.append(np.nanstd(gazeEl_fr))
+
+                ############################################################
+                ## End trial loop
+
+            blockAsessmentDict = {
+                "blockNum": blNum,
+                "meanAcc": np.nanmean(accuracy_tr),
+                "minAcc": np.min(accuracy_tr),
+                "maxAcc": np.max(accuracy_tr),
+                "meanPrec": np.nanmean(prec_tr),
+                "minPrec": np.min(prec_tr),
+                "maxPrec": np.max(prec_tr),
+                "totalDropouts": np.sum(numDropouts_tr),
+                "totalNumFrames": len(sessionDictIn['processedCalib'].groupby(['blockNumber']).get_group(blNum)),
+                "pctDropouts": np.nanmean(pctDropouts_tr),
+                "gridWidthDegs": tr['azimuthWidth'].iloc[0],
+                "gridHeightDegs": tr['elevationHeight'].iloc[0]
+
+
+            }
+
+
+            blockDistList.append(blockAsessmentDict)
+
+            ############################################################
+            ## End block loop
+
+
+    assessmentDf = pd.DataFrame.from_records(blockDistList)
+    sessionDictIn['calibrationQuality'] = assessmentDf
+
+    sessionDictIn['trialInfo']['accuracy'] = accuracy_tr
+    sessionDictIn['trialInfo']['precision'] = prec_tr
+    sessionDictIn['trialInfo']['pctDropouts'] = pctDropouts_tr
+    sessionDictIn['trialInfo']['numDropouts'] = numDropouts_tr
+    sessionDictIn['trialInfo'][('assessmentErr','az')] = azErr_tr
+    sessionDictIn['trialInfo'][('assessmentErr','el')] = elErr_tr
+    sessionDictIn['trialInfo'][('targetSphericalPosInHead','az')] = targLocAz_tr
+    sessionDictIn['trialInfo'][('targetSphericalPosInHead','el')] = targLocEl_tr
+    sessionDictIn['trialInfo'][('gazeSphericalPosInHead','az')] = meanGazeAz_tr
+    sessionDictIn['trialInfo'][('gazeSphericalPosInHead','el')] = meanGazeEl_tr
+
+
+    return sessionDictIn
+
+def plotTrackQuality(sessionDictIn):
     
     cList = ['r','g','b']
-    lineHandles = []
 
     offsets = np.linspace(-.01,.01,3)
 
@@ -1153,66 +1299,70 @@ def plotTrackQuality(sessionDictIn):
     # Iterate through blocks
     for idx, trInfoInBlock in trInfo_gbBlock:
 
-            blNum = int(trInfoInBlock.iloc[0]['blockNumber'])
+        p, ax = plt.subplots(1, 1) #sharey=True)
+        p.set_size_inches(8,8)
+        lineHandles = []
 
-            # Iterate through rows
-            if( np.unique(trInfoInBlock['trialType'])[0] == "CalibrationAssessment" ):
-                
-                for trIdx, thisTrInfo in trInfoInBlock.iterrows():
+        blNum = int(trInfoInBlock.iloc[0]['blockNumber'])
 
-                    trNum = thisTrInfo['trialNumber'].iloc[0]
+        # Iterate through rows
+        if( np.unique(trInfoInBlock['trialType'])[0] == "CalibrationAssessment" ):
+            
+            for trIdx, thisTrInfo in trInfoInBlock.iterrows():
 
-                    # Get rows of this trial from sessionDict['processedCalib']
-                    tr = calibProc_gbBlock_Trial.get_group((blNum, trNum))    
+                trNum = thisTrInfo['trialNumber'].iloc[0]
 
-                    # Targets
-                    xx = thisTrInfo[('targetSphericalPosInHead','az')]
-                    yy = thisTrInfo[('targetSphericalPosInHead','el')]
-                    hT = ax.scatter(xx, yy,s=50,c='b')
-                    hT.set_label('target')
+                # Get rows of this trial from sessionDict['processedCalib']
+                tr = calibProc_gbBlock_Trial.get_group((blNum, trNum))    
 
-                    gazeAz_fr = np.rad2deg(np.arctan2(tr['gaze_normal2']['x'], tr['gaze_normal2']['z'] ))
-                    gazeEl_fr = np.rad2deg(np.arctan2(tr['gaze_normal2']['y'], tr['gaze_normal2']['z'] ))
+                # Targets
+                xx = thisTrInfo[('targetSphericalPosInHead','az')]
+                yy = thisTrInfo[('targetSphericalPosInHead','el')]
+                hT = ax.scatter(xx, yy,s=50,c='b')
+                hT.set_label('target')
 
-                    hT = ax.scatter(gazeAz_fr,gazeEl_fr,s=5)
+                gazeAz_fr = np.rad2deg(np.arctan2(tr['gaze_normal2']['x'], tr['gaze_normal2']['z'] ))
+                gazeEl_fr = np.rad2deg(np.arctan2(tr['gaze_normal2']['y'], tr['gaze_normal2']['z'] ))
 
-                    meanGazeAz = thisTrInfo[('gazeSphericalPosInHead','az')] 
-                    meanGazeEl = thisTrInfo[('gazeSphericalPosInHead','el')] 
+                hT = ax.scatter(gazeAz_fr,gazeEl_fr,s=5)
 
-                    stdGazeAz = thisTrInfo[('assessmentErr','az')]
-                    stdGazeEl = thisTrInfo[('assessmentErr','el')]
+                meanGazeAz = thisTrInfo[('gazeSphericalPosInHead','az')] 
+                meanGazeEl = thisTrInfo[('gazeSphericalPosInHead','el')] 
 
-                    ax.errorbar(meanGazeAz, meanGazeEl, stdGazeAz, stdGazeEl,c='k',elinewidth=2)
-                    ax.scatter(meanGazeAz, meanGazeEl,s=20,c='k')
+                stdGazeAz = thisTrInfo[('assessmentErr','az')]
+                stdGazeEl = thisTrInfo[('assessmentErr','el')]
 
-                    vPos = np.max([meanGazeEl,yy])
-                    textStr = '   %1.2f$^\circ$ (%1.2f$^\circ$)'%(thisTrInfo['accuracy'],thisTrInfo['precision'])
-                    hErr = ax.text(xx,vPos+1.5, textStr,horizontalalignment='center',size=10)
+                ax.errorbar(meanGazeAz, meanGazeEl, stdGazeAz, stdGazeEl,c='k',elinewidth=2)
+                ax.scatter(meanGazeAz, meanGazeEl,s=20,c='k')
+
+                vPos = np.max([meanGazeEl,yy])
+                textStr = '   %1.2f$^\circ$ (%1.2f$^\circ$)'%(thisTrInfo['accuracy'],thisTrInfo['precision'])
+                hErr = ax.text(xx,vPos+1.5, textStr,horizontalalignment='center',size=10)
 
 
-                ax.set_ylabel('elevation (degrees)', fontsize=12)
-                ax.set_xlabel('azimuth (degrees)', fontsize=12)
-                ax.tick_params(axis='both', which='major', labelsize=12)
+            ax.set_ylabel('elevation (degrees)', fontsize=12)
+            ax.set_xlabel('azimuth (degrees)', fontsize=12)
+            ax.tick_params(axis='both', which='major', labelsize=12)
 
-                ax.set_ylim([-25,25])
-                ax.set_xlim([-25,25])
-                
-                ax.axes.yaxis.grid(True)
-                ax.axes.xaxis.grid(True)
-                ax.axes.set_axisbelow(True)
+            ax.set_ylim([-25,25])
+            ax.set_xlim([-25,25])
+            
+            ax.axes.yaxis.grid(True)
+            ax.axes.xaxis.grid(True)
+            ax.axes.set_axisbelow(True)
 
-                plt.rcParams["font.family"] = "sans-serif"
-                p.set_facecolor('w')
+            plt.rcParams["font.family"] = "sans-serif"
+            p.set_facecolor('w')
 
-                outDir = '../Figures/CalibQual/' + sessionDictIn['subID'] + '/'
+            outDir = 'Figures/CalibQual/' + sessionDictIn['subID'] + '/'
 
-                if not os.path.exists(outDir):
-                    os.makedirs(outDir)
+            if not os.path.exists(outDir):
+                os.makedirs(outDir)
 
-                fName = str(outDir + 'b-{}_' + '.png').format(blNum)
+            fName = str(outDir + 'b-{}_' + '.png').format(blNum)
 
-                plt.savefig(fName)
-                plt.close()
+        plt.savefig(fName)
+        plt.close()
 
     return sessionDictIn
 
@@ -1288,8 +1438,8 @@ def processSingleSession(subNum, doNotLoad=False):
     sessionDict = filterAndDiffSignals(sessionDict)
     sessionDict = vectorMovementModel(sessionDict)
     sessionDict = saveOutVectorMovementModel(sessionDict)
-
-    # sessionDict = calcCalibrationQuality(sessionDict,analysisParameters)
+    sessionDict = runCalibrationAssessment(sessionDict)
+    sessionDict = plotTrackQuality(sessionDict)
 
     # sessionDict = loadTemp()
     # saveTemp(sessionDict)
@@ -1299,4 +1449,4 @@ def processSingleSession(subNum, doNotLoad=False):
 
 if __name__ == "__main__":
     
-    (sessionList,allTrialData) = processAllSesssions(doNotLoad=True)
+    (sessionList,allTrialData) = processAllSesssions(doNotLoad=False)
