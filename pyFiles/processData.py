@@ -1368,6 +1368,36 @@ def plotTrackQuality(sessionDictIn):
 
 
 
+def calibAssessment(sessionDictIn,saveDir = 'figout/', confidenceThresh = False):
+
+    import evaluateSegAlgo as ev
+    
+    sessionDictIn = ev.calcCyclopean(sessionDictIn)
+
+    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'targetPos','targetWorldSpherical', sessionDictKey = 'processedCalib')
+    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'targeLocalPos','targetLocalSpherical', sessionDictKey = 'processedCalib')
+    
+    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal0','gaze0Spherical', sessionDictKey = 'processedCalib',flipY=True)
+    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal1','gaze1Spherical', sessionDictKey = 'processedCalib',flipY=True)
+    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal2','gaze2Spherical', sessionDictKey = 'processedCalib',flipY=True)
+
+    sessionDictIn = ev.calcTrialLevelCalibInfo(sessionDictIn)
+
+    sessionDictIn = ev.calcGazeToTargetFixError(sessionDictIn,'gaze0Spherical','targetLocalSpherical','fixError_eye0')
+    sessionDictIn = ev.calcGazeToTargetFixError(sessionDictIn,'gaze1Spherical','targetLocalSpherical','fixError_eye1')
+    sessionDictIn = ev.calcGazeToTargetFixError(sessionDictIn,'gaze2Spherical','targetLocalSpherical','fixError_eye2')
+
+    # sessionDictIn['trialInfo']['fixTargetSpherical','az'] = sessionDictIn['trialInfo']['fixTargetSpherical','az'].round(2)
+    # sessionDictIn['trialInfo']['fixTargetSpherical','el'] = sessionDictIn['trialInfo']['fixTargetSpherical','el'].round(2)
+
+    sessionDictIn = ev.calcAverageGazeDirPerTrial(sessionDictIn)
+
+    sessionDictIn = ev.calcFixationStatistics(sessionDictIn, confidenceThresh)
+
+    ev.plotFixAssessment(sessionDictIn, saveDir)
+
+    return sessionDictIn
+
 
 def saveTemp(sessionDict):
     
@@ -1438,13 +1468,17 @@ def processSingleSession(subNum, doNotLoad=False):
     sessionDict = filterAndDiffSignals(sessionDict)
     sessionDict = vectorMovementModel(sessionDict)
     sessionDict = saveOutVectorMovementModel(sessionDict)
-    sessionDict = runCalibrationAssessment(sessionDict)
-    sessionDict = plotTrackQuality(sessionDict)
+    
+    # sessionDict = runCalibrationAssessment(sessionDict)
+    # sessionDict = plotTrackQuality(sessionDict)
+
+    sessionDict = calibAssessment(sessionDict,saveDir = 'figout/'+subString+"/", confidenceThresh = False)
 
     # sessionDict = loadTemp()
     # saveTemp(sessionDict)
 
     return sessionDict
+    
 
 
 if __name__ == "__main__":
