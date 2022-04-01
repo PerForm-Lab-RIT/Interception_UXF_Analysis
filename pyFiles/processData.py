@@ -1377,9 +1377,9 @@ def calibAssessment(sessionDictIn,saveDir = 'figout/', confidenceThresh = False)
     sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'targetPos','targetWorldSpherical', sessionDictKey = 'processedCalib')
     sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'targeLocalPos','targetLocalSpherical', sessionDictKey = 'processedCalib')
     
-    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal0','gaze0Spherical', sessionDictKey = 'processedCalib',flipY=True)
-    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal1','gaze1Spherical', sessionDictKey = 'processedCalib',flipY=True)
-    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal2','gaze2Spherical', sessionDictKey = 'processedCalib',flipY=True)
+    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal0','gaze0Spherical', sessionDictKey = 'processedCalib',flipY=False)
+    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal1','gaze1Spherical', sessionDictKey = 'processedCalib',flipY=False)
+    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal2','gaze2Spherical', sessionDictKey = 'processedCalib',flipY=False)
 
     sessionDictIn = ev.calcTrialLevelCalibInfo(sessionDictIn)
 
@@ -1472,7 +1472,7 @@ def processSingleSession(subNum, doNotLoad=False):
     # sessionDict = runCalibrationAssessment(sessionDict)
     # sessionDict = plotTrackQuality(sessionDict)
 
-    sessionDict = calibAssessment(sessionDict,saveDir = 'figout/'+subString+"/", confidenceThresh = False)
+    sessionDict = calibAssessment(sessionDict,saveDir = 'figout/'+ sessionDict['subID'] +"/", confidenceThresh = False)
 
     # sessionDict = loadTemp()
     # saveTemp(sessionDict)

@@ -260,7 +260,7 @@ def calcFixationStatistics(sessionDictIn, confidenceThresh = False):
 
     dataFrameRows = []
 
-    for eyeId in range(2):
+    for eyeId in range(3):
         
         gazeSphericalCol ='gaze{}Spherical'.format(eyeId)
         fixErrColumn ='fixError_eye{}'.format(eyeId)
@@ -391,7 +391,7 @@ def plotFixAssessment(sessionDictIn, saveDir = False):
 
     gb_h_w = fixDF.groupby([('gridSize', 'heightDegs'), ('gridSize', 'widthDegs')])
     
-    for eyeId in range(2):
+    for eyeId in range(3):
         for (gHeight,gWidth) in list(gb_h_w.groups.keys()):
 
             fig, ax = plt.subplots()
