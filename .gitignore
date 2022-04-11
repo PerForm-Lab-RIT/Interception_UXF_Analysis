@@ -1,5 +1,6 @@
 Data/
 DataBackup/
+DataAttic/
 Figures/
 sessionFiles.pickle
 
@@ -126,3 +127,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+sessionFiles.pickle

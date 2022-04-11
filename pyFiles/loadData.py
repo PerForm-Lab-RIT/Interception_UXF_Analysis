@@ -77,22 +77,25 @@ def processTrial(dataFolder, trialResults, numTrials = False):
 
     dataParentFolder = '/'.join(dataFolder.split('/')[:-2]) + '/';
 
+    # sessionFolderList = []
+    # [sessionFolderList.append(name) for name in os.listdir(dataParentFolder) if name[0] != '.'] # is not
+    
     ## Import view data and rename some columns
     dataFileName = '/'.join(trialResults['camera_movement_location_0'].split('/')[-2:])
-    viewData = pd.read_csv( dataParentFolder + dataFileName)
+    viewData = pd.read_csv( dataFolder + dataFileName)
     viewData = viewData.rename(columns={"time": "frameTime"})
 
     ## Import pupil timestamp data (recorded within Unity)
     dataFileName = '/'.join(trialResults['time_sync_pupilTimeStamp_location_0'].split('/')[-2:])
-    pupilTimestampData = pd.read_csv( dataParentFolder + dataFileName)
+    pupilTimestampData = pd.read_csv( dataFolder + dataFileName)
     pupilTimestampData = pupilTimestampData.rename(columns={"time": "frameTime","timeStamp":"pupilTimestamp"})
-
+    
     ## Import gaze direction data
     gazeDataFolderList = []
-    [gazeDataFolderList.append(name) for name in os.listdir(dataParentFolder + 'PupilData') if name[0] != '.'] # is not
+    [gazeDataFolderList.append(name) for name in os.listdir(dataFolder + 'PupilData') if name[0] != '.'] # is not
     
     pupilSessionFolder = '/' + gazeDataFolderList[0]   
-    gazeDataFolder = dataParentFolder + 'PupilData' + pupilSessionFolder
+    gazeDataFolder = dataFolder + 'PupilData' + pupilSessionFolder
 
     try:
         pupilExportsFolder = []
@@ -147,7 +150,7 @@ def processTrial(dataFolder, trialResults, numTrials = False):
 
         ## Import ball data and rename some columns
         dataFileName = '/'.join(trialResults['etassessment_calibrationAssessment_location_0'].split('/')[-2:])
-        assessmentData = pd.read_csv(dataParentFolder + dataFileName)
+        assessmentData = pd.read_csv(dataFolder + dataFileName)
         
         newKeys = ['frameTime']
         [newKeys.append(key[13:]) for key in assessmentData.keys()[1:]] # Fix a silly mistake I made when naming columns
@@ -270,7 +273,7 @@ def unpackSession(subNum, doNotLoad = False):
     rawCalibGazeDataDf = pd.DataFrame()
     processedCalibDataDf = pd.DataFrame()
 
-    trialData = pd.read_csv( dataParentFolder + '/trial_results.csv')
+    trialData = pd.read_csv( dataFolder + '/trial_results.csv')
 
     for trIdx, trialResults in trialData.iterrows():
 
