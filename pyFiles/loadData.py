@@ -60,7 +60,47 @@ def convertIndexToMultiIndexIgnoringUnderscore(labelIn):
     else:
 
         return (labelIn,'')
+
+def resolveMultiplePLSessions(dataFolder):
+
+    dataParentFolder = '/'.join(dataFolder.split('/')[:-2]) + '/'
+    
+    ## Import gaze direction data
+    gazeDataFolderList = []
+    [gazeDataFolderList.append(name) for name in os.listdir(dataFolder + 'PupilData') if name[0] != '.'] # is not
+
+    ## append all data to a single gazedata file
+
+    
+    gazePositionsDF = False;
+
+    ## these are PL session folders e.g., /000, /001
+    for sessionIdx, pupilSessionFolder in enumerate(gazeDataFolderList):
         
+        gazeDataFolder = dataFolder + 'PupilData/' + pupilSessionFolder
+        
+        try:
+            pupilExportsFolder = []
+            [pupilExportsFolder.append(name) for name in os.listdir(gazeDataFolder + '/Exports') if name[0] != '.']
+            
+            if len(pupilExportsFolder) > 1:
+                logger.exception('Too many export directories in pupil labs session folder ' + gazeDataFolder + ' .  Leave only the one to be processed.')
+
+            ##gazePositionsDF = pd.read_csv( gazeDataFolder + '/Exports/' + pupilExportsFolder[-1] + '/gaze_positions.csv' )
+            
+            if( sessionIdx == 0 ):
+                gazePositionsDF = pd.read_csv( gazeDataFolder + '/Exports/' + pupilExportsFolder[-1] + '/gaze_positions.csv' )
+            else:
+                gazePositionsDF = pd.concat([gazePositionsDF,pd.read_csv( gazeDataFolder + '/Exports/' + pupilExportsFolder[-1] + '/gaze_positions.csv' )],ignore_index=True)
+
+
+        except:
+            logger.exception('No gaze_positions.csv in ' + pupilExportsFolder + ' .  Process and export data in Pupil Player.')
+    
+    gazePositionsDF.to_pickle(dataFolder + 'merged_gazeData.pkl')
+
+
+
 def processTrial(dataFolder, trialResults, numTrials = False):
     '''
     This function loads in the raw gaze data for a trial and the raw unity data for a trial.
@@ -89,24 +129,8 @@ def processTrial(dataFolder, trialResults, numTrials = False):
     dataFileName = '/'.join(trialResults['time_sync_pupilTimeStamp_location_0'].split('/')[-2:])
     pupilTimestampData = pd.read_csv( dataFolder + dataFileName)
     pupilTimestampData = pupilTimestampData.rename(columns={"time": "frameTime","timeStamp":"pupilTimestamp"})
-    
-    ## Import gaze direction data
-    gazeDataFolderList = []
-    [gazeDataFolderList.append(name) for name in os.listdir(dataFolder + 'PupilData') if name[0] != '.'] # is not
-    
-    pupilSessionFolder = '/' + gazeDataFolderList[0]   
-    gazeDataFolder = dataFolder + 'PupilData' + pupilSessionFolder
 
-    try:
-        pupilExportsFolder = []
-        [pupilExportsFolder.append(name) for name in os.listdir(gazeDataFolder + '/Exports') if name[0] != '.']
-
-        # Defaults to the most recent pupil export folder (highest number)
-        gazePositionsDF = pd.read_csv( gazeDataFolder + '/Exports/' + pupilExportsFolder[-1] + '/gaze_positions.csv' )
-
-    except:
-        logger.exception('No gaze_positions.csv.  Process and export data in Pupil Player.')
-
+    gazePositionsDF = pd.read_pickle(dataFolder + 'merged_gazeData.pkl')
     gazePositionsDF = gazePositionsDF.rename(columns={"gaze_timestamp": "pupilTimestamp"})
 
     # Sort, because the left/right eye data is written asynchronously, and this means timestamps may not be monotonically increasing.
@@ -132,14 +156,14 @@ def processTrial(dataFolder, trialResults, numTrials = False):
         ## Import ball data and rename some columns
         dataFileName = '/'.join(trialResults['ball_movement_location_0'].split('/')[-2:])
 
-        ballData = pd.read_csv( dataParentFolder + dataFileName)
+        ballData = pd.read_csv( dataFolder + dataFileName)
         ballData = ballData.rename(columns={"time": "frameTime"})
         ballData.rename(columns={"pos_x": "ballPos_x", "pos_y": "ballPos_y","pos_z": "ballPos_z"},inplace=True)
         ballData.rename(columns={"rot_x": "ballRot_x", "rot_y": "ballRot_y","rot_z": "ballRot_z"},inplace=True)
 
         ## Import paddle data and rename some columns
         dataFileName = '/'.join(trialResults['paddle_movement_location_0'].split('/')[-2:])
-        paddleData = pd.read_csv( dataParentFolder + dataFileName)
+        paddleData = pd.read_csv( dataFolder + dataFileName)
         paddleData = paddleData.rename(columns={"time": "frameTime"})
 
         ## Merge view and ball data into rawTrialData
@@ -247,7 +271,7 @@ def unpackSession(subNum, doNotLoad = False):
     [dataSubFolderList.append(name) for name in os.listdir(dataParentFolder) if name[0] != '.']
     dataFolder = dataParentFolder + '/' + dataSubFolderList[0] + '/'
 
-    logger.info('Processing session: ' + dataParentFolder)
+    logger.info('Processing session: ' + dataFolder)
 
     # Try to load pickle if doNotLoad == False
     picklePath = dataFolder + dataSubFolderList[0] + '.pickle'
@@ -263,6 +287,10 @@ def unpackSession(subNum, doNotLoad = False):
         return sessionData
 
     logger.info('Compiling session dict from *.csv.')
+
+    
+    ## Merge all PL sessiondata into one file
+    resolveMultiplePLSessions(dataFolder)
 
     # If not loading from pickle, create and populate dataframes
     rawExpUnityDataDf = pd.DataFrame()
@@ -313,7 +341,7 @@ def unpackSession(subNum, doNotLoad = False):
     newColList.extend([convertIndexToMultiIndexIgnoringUnderscore(c) for c in trialData.columns[-len(trDataFiles):]])
     trialData.columns = pd.MultiIndex.from_tuples(newColList)
     
-    expDict = json.load( open(dataParentFolder + '/settings/' + 'settings.json'))
+    expDict = json.load( open(dataFolder + '/settings/' + 'settings.json'))
 
     processedExpDataDf = processedExpDataDf.reset_index(drop=True)
     processedCalibDataDf = processedCalibDataDf.reset_index(drop=True)
@@ -350,11 +378,11 @@ if __name__ == "__main__":
     # ### Load dataframes
     # Remember to set loadParsedData, loadProcessedData.
 
-    dataFolderList = []
-    [dataFolderList.append(name) for name in os.listdir("Data/") if name[0] != '.']
+    # dataFolderList = []
+    # [dataFolderList.append(name) for name in os.listdir("Data/") if name[0] != '.']
 
-    for i, name in enumerate(dataFolderList):
-        print(str(i) + ': ' + name )
+    # for i, name in enumerate(dataFolderList):
+    #     print(str(i) + ': ' + name )
 
     sessionDict = unpackSession(subNum, doNotLoad = True)
 

@@ -1,8 +1,11 @@
 Data/
 DataBackup/
 DataAttic/
+FailedData/
 Figures/
+figout/
 sessionFiles.pickle
+allTrialData.pickle
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
