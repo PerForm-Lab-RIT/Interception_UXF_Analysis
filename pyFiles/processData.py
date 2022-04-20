@@ -1120,9 +1120,9 @@ def saveOutVectorMovementModel(sessionDict):
                       halfHFOVDegs = 80,
                       figSize = [7,7])
 
-    #     condStr = 'g-{:.1f}_pd-{:1.1f}'.format(float(trInfo['expansionGain']),float(trInfo['passingLocX']))
+        condStr = 'g-{:.1f}_pd-{:1.1f}'.format(float(trInfoGb['expansionGain']),float(trInfoGb['passingDistanceInArmLengths']))
 
-        condStr = 'g-{:.1f}_pd-{:1.1f}'.format(np.float64(111),np.float64(222))
+        # condStr = 'g-{:.1f}_pd-{:1.1f}'.format(np.float64(111),np.float64(222))
         outDir = 'Figures/Projections/' + condStr + '/' + sessionDict['subID'] + '/'
 
         if not os.path.exists(outDir):
@@ -1472,7 +1472,7 @@ def processSingleSession(subNum, doNotLoad=False):
     # sessionDict = runCalibrationAssessment(sessionDict)
     # sessionDict = plotTrackQuality(sessionDict)
 
-    sessionDict = calibAssessment(sessionDict,saveDir = 'figout/'+ sessionDict['subID'] +"/", confidenceThresh = False)
+    sessionDict = calibAssessment(sessionDict,saveDir = 'Figures/'+ sessionDict['subID'] +"/", confidenceThresh = sessionDict['analysisParameters']['confidenceThreshold'])
 
     # sessionDict = loadTemp()
     # saveTemp(sessionDict)
