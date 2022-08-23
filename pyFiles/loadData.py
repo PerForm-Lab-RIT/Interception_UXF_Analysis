@@ -27,6 +27,48 @@ logger = logging.getLogger(__name__)
 wd = os.getcwd()
 os.chdir(wd)
 
+def getSubjectSubFolders(subNum,printSessionID=False):
+    ##
+    # returns: folderDict
+    ##
+
+
+    # Get folder/filenames
+    dataParentFolderList = []
+    [dataParentFolderList.append(name) for name in os.listdir("Data/") if name[0] is not '.']
+    dataFolder = "Data/" + dataParentFolderList[subNum] + '/'
+
+    if printSessionID:
+        for i, name in enumerate(dataParentFolderList):
+            if i == subNum:
+                print('***> ' + str(i) + ': ' + name)
+            else:
+                print(str(i) + ': ' + name)
+
+    # eg. dataFolder = /P_201219105516_sub2/S001/
+
+
+    # I always open the lowest valued sessionfolder (e.g. S001)
+    plSessionFolderList = []
+    [plSessionFolderList.append(name) for name in os.listdir(dataFolder + '/PupilData') if name[0] is not '.']
+
+    # eg. pupilSessionFolder = /P_201219105516_sub2/S001/PupilData/000/
+    pupilSessionFolder = dataFolder + 'PupilData/' + plSessionFolderList[0] + '/'
+
+    # Export folder list
+    pupilExportsFolderList = []
+    [pupilExportsFolderList.append(name) for name in os.listdir(pupilSessionFolder + 'Exports') if name[0] is not '.']
+
+    folderDict = {'subName': dataParentFolderList[subNum],# P_201219105516_sub2
+                  #'subFolder': dataParentFolder,# /P_201219105516_sub2/
+                  'sessionFolder': dataFolder, # /P_201219105516_sub2/S001/
+                  'pupilSessionFolder': pupilSessionFolder, #  /P_201219105516_sub2/S001/PupilData/000/
+                  'pupilExportsFolderList': pupilExportsFolderList,  # [/P_201219105516_sub2/S001/PupilData/000/Exports/000]
+                  }
+
+
+    return folderDict
+
 ################################################################################
 #### f(trialData, trIdx)
 
@@ -60,8 +102,94 @@ def convertIndexToMultiIndexIgnoringUnderscore(labelIn):
     else:
 
         return (labelIn,'')
-        
-def processTrial(dataFolder, trialResults, numTrials = False):
+
+def processCalibSequence(dataFolder, load_realtime_ref_data, specificExport=None):
+    
+    dataParentFolder = '/'.join(dataFolder.split('/')[:-2]) + '/';
+    
+    ## Import pupil timestamp data (recorded within Unity)
+    
+    realtime_calib_points_loc = dataParentFolder + 'PupilData/000/realtime_calib_points.msgpack';
+    
+    if os.path.exists(realtime_calib_points_loc):
+        ref_data = load_realtime_ref_data(realtime_calib_points_loc)
+        ref_data_df = pd.DataFrame(ref_data)
+    else:
+        logger.exception('No realtime pupil timestamp data.')
+    ref_data_df = ref_data_df.rename(columns={"timestamp": "pupilTimestamp"})
+    ref_data_df[['screen-pos_x', 'screen-pos_y', 'screen-pos_z']] = pd.DataFrame(ref_data_df['screen_pos'].tolist(), index=ref_data_df.index)
+    ref_data_df.drop('screen_pos', inplace=True, axis=1)
+    ref_data_df.sort_values(by='pupilTimestamp',inplace=True)
+    
+    prevX = None
+    prevY = None
+    prevZ = None
+    trialIdxs = []
+    currTrialIdx = 0
+    for index, row in ref_data_df.iterrows():
+        if prevX != row['screen-pos_x'] or prevY != row['screen-pos_y'] or prevZ != row['screen-pos_z']:
+            currTrialIdx += 1
+        trialIdxs.append(currTrialIdx)
+        prevX = row['screen-pos_x']
+        prevY = row['screen-pos_y']
+        prevZ = row['screen-pos_z']
+    
+    ref_data_df['trialNumber'] = trialIdxs
+
+    #dataFileName = '/'.join(trialResults['time_sync_pupilTimeStamp_location_0'].split('/')[-2:])
+    #pupilTimestampData = pd.read_csv( dataParentFolder + dataFileName)
+    #pupilTimestampData = pupilTimestampData.rename(columns={"time": "frameTime","timeStamp":"pupilTimestamp"})
+    
+    ## Import gaze direction data
+    gazeDataFolderList = []
+    [gazeDataFolderList.append(name) for name in os.listdir(dataParentFolder + 'PupilData') if name[0] != '.'] # is not
+    
+    pupilSessionFolder = '/' + gazeDataFolderList[0]   
+    gazeDataFolder = dataParentFolder + 'PupilData' + pupilSessionFolder
+    try:
+        pupilExportsFolder = []
+        [pupilExportsFolder.append(name) for name in os.listdir(gazeDataFolder + '/Exports') if name[0] != '.']
+        if specificExport is None:
+            # Defaults to the most recent pupil export folder (highest number)
+            gazePositionsDF = pd.read_csv( gazeDataFolder + '/Exports/' + pupilExportsFolder[-1] + '/gaze_positions.csv' )
+        elif specificExport not in pupilExportsFolder:
+            logger.exception('Export ' + specificExport + ' not found.')
+            return None
+        else:
+            gazePositionsDF = pd.read_csv( gazeDataFolder + '/Exports/' + specificExport + '/gaze_positions.csv' )
+    except:
+        logger.exception('No gaze_positions.csv.  Process and export data in Pupil Player.')
+    
+    gazePositionsDF = gazePositionsDF.rename(columns={"gaze_timestamp": "pupilTimestamp"})
+
+    # Sort, because the left/right eye data is written asynchronously, and this means timestamps may not be monotonically increasing.
+    gazePositionsDF.sort_values(by='pupilTimestamp',inplace=True)
+
+    rawTrialData = ref_data_df
+
+    firstTS = rawTrialData['pupilTimestamp'].min()
+    lastTS = rawTrialData['pupilTimestamp'].max()
+    
+    firstIdx = list(map(lambda i: i>= float(firstTS), gazePositionsDF['pupilTimestamp'])).index(True)
+    lastIdx = list(map(lambda i: i>= float(lastTS), gazePositionsDF['pupilTimestamp'])).index(True)
+    rawGazeData = gazePositionsDF.loc[firstIdx:lastIdx]
+    
+    interpDF = pd.merge_asof( rawTrialData, rawGazeData.reset_index(), on = 'pupilTimestamp', direction='nearest')
+    
+    newColList = [convertIndexToMultiIndexUsingUnderscore(c) for c in interpDF.columns[:len(rawTrialData.columns)]]
+    newGazeColList = [ convertIndexToMultiIndexIgnoringUnderscore(c) for c in interpDF.columns[(len(rawTrialData.columns)):] ]
+    newColList.extend(newGazeColList)
+    interpDF.columns = pd.MultiIndex.from_tuples(newColList)
+    
+    # Probably would want to add the target location here
+    #   First target would be 0, 0, 1 iirc
+    
+    dictOut = {"rawUnityData": rawTrialData, "rawGazeData": rawGazeData, "interpolatedData": interpDF}
+    
+    return dictOut
+    
+
+def processTrial(dataFolder, trialResults, numTrials = False, specificExport=None):
     '''
     This function loads in the raw gaze data for a trial and the raw unity data for a trial.
     The Unity data is upsampled to match the higher gaze sample data for the trial.
@@ -70,10 +198,13 @@ def processTrial(dataFolder, trialResults, numTrials = False):
     - Raw per-frame Unity data.
     - The interpolated, or "processed" data.
     '''
+    exportStr = specificExport
+    if exportStr is None:
+        exportStr = ''
     if(numTrials):
-        logger.info('Processing subject: ' + trialResults['ppid'] + ' t = ' + str(trialResults['trial_num']) + ' of ' + str(numTrials) )
+        logger.info('Processing subject: ' + trialResults['ppid'] + '; e: ' + exportStr +'; t = ' + str(trialResults['trial_num']) + ' of ' + str(numTrials) )
     else:
-        logger.info('Processing subject: ' + trialResults['ppid'] + ' t = ' + str(trialResults['trial_num']))
+        logger.info('Processing subject: ' + trialResults['ppid'] + '; e: ' + exportStr +'; t = ' + str(trialResults['trial_num']))
 
     dataParentFolder = '/'.join(dataFolder.split('/')[:-2]) + '/';
 
@@ -97,13 +228,21 @@ def processTrial(dataFolder, trialResults, numTrials = False):
     try:
         pupilExportsFolder = []
         [pupilExportsFolder.append(name) for name in os.listdir(gazeDataFolder + '/Exports') if name[0] != '.']
-
-        # Defaults to the most recent pupil export folder (highest number)
-        gazePositionsDF = pd.read_csv( gazeDataFolder + '/Exports/' + pupilExportsFolder[-1] + '/gaze_positions.csv' )
+        
+        if specificExport is None:
+            # Defaults to the most recent pupil export folder (highest number)
+            gazePositionsDF = pd.read_csv( gazeDataFolder + '/Exports/' + pupilExportsFolder[-1] + '/gaze_positions.csv' )
+        elif specificExport not in pupilExportsFolder:
+            logger.exception('Export ' + specificExport + ' not found.')
+            return None
+        else:
+            gazePositionsDF = pd.read_csv( gazeDataFolder + '/Exports/' + specificExport + '/gaze_positions.csv' )
 
     except:
         logger.exception('No gaze_positions.csv.  Process and export data in Pupil Player.')
 
+    #print(gazePositionsDF.columns)
+    #exit()
     gazePositionsDF = gazePositionsDF.rename(columns={"gaze_timestamp": "pupilTimestamp"})
 
     # Sort, because the left/right eye data is written asynchronously, and this means timestamps may not be monotonically increasing.
@@ -116,7 +255,7 @@ def processTrial(dataFolder, trialResults, numTrials = False):
     if len(pupilTimestampData) == 0:
         logger.exception('No pupil timestamp data.')
 
-    rawTrialData = pupilTimestampData;
+    rawTrialData = pupilTimestampData
     rawTrialData['trialNumber'] = trialResults['trial_num']
     rawTrialData['blockNumber'] = trialResults['block_num']
     rawTrialData = pd.merge(rawTrialData, viewData, on ='frameTime',validate= 'one_to_many')
@@ -146,8 +285,17 @@ def processTrial(dataFolder, trialResults, numTrials = False):
     if(trialResults['trialType'] == 'CalibrationAssessment'):
 
         ## Import ball data and rename some columns
+        for key in trialResults.keys():
+            print(key, trialResults[key])
+            print()
+            print()
+            
+        
         dataFileName = '/'.join(trialResults['etassessment_calibrationAssessment_location_0'].split('/')[-2:])
         assessmentData = pd.read_csv(dataParentFolder + dataFileName)
+        
+        print(assessmentData)
+        exit()
         
         newKeys = ['frameTime']
         [newKeys.append(key[13:]) for key in assessmentData.keys()[1:]] # Fix a silly mistake I made when naming columns
@@ -165,6 +313,7 @@ def processTrial(dataFolder, trialResults, numTrials = False):
 
     firstTS = tr.head(1)['pupilTimestamp']
     lastTS = tr.tail(1)['pupilTimestamp']
+    
     firstIdx = list(map(lambda i: i> float(firstTS), gazePositionsDF['pupilTimestamp'])).index(True)
     lastIdx = list(map(lambda i: i> float(lastTS), gazePositionsDF['pupilTimestamp'])).index(True)
     rawGazeData = gazePositionsDF.loc[firstIdx:lastIdx]
@@ -207,7 +356,7 @@ def processTrial(dataFolder, trialResults, numTrials = False):
 ################################################################################
 ################################################################################
 
-def unpackSession(subNum, doNotLoad = False):
+def unpackSession(subNum, load_realtime_ref_data, doNotLoad = False, specificExport=None):
     '''
     Exports a dictionary with the following keys:
 
@@ -262,6 +411,10 @@ def unpackSession(subNum, doNotLoad = False):
     logger.info('Compiling session dict from *.csv.')
 
     # If not loading from pickle, create and populate dataframes
+    rawSequenceUnityDataDf = pd.DataFrame()
+    rawSequenceGazeDataDf = pd.DataFrame()
+    processedSequenceDataDf = pd.DataFrame()
+    
     rawExpUnityDataDf = pd.DataFrame()
     rawExpGazeDataDf = pd.DataFrame()
     processedExpDataDf = pd.DataFrame()
@@ -271,20 +424,33 @@ def unpackSession(subNum, doNotLoad = False):
     processedCalibDataDf = pd.DataFrame()
 
     trialData = pd.read_csv( dataParentFolder + '/trial_results.csv')
+    
+    def addToDF(targetDF,dfIn):
 
+        return pd.concat([targetDF, dfIn])
+
+        # if( targetDF.empty ):
+        #     return dfIn
+        # else:
+        #     # targetDF = targetDF.append(dfIn)
+        #     return pd.concat([targetDF, dfIn])
+    
+    # The Calibration Sequence
+    calibSequenceDict = processCalibSequence(dataFolder, load_realtime_ref_data, specificExport=specificExport)
+    
+    processedSequenceDataDf = addToDF(processedSequenceDataDf,calibSequenceDict['interpolatedData'])
+    rawSequenceUnityDataDf = addToDF(rawSequenceUnityDataDf,calibSequenceDict['rawUnityData'])
+    rawSequenceGazeDataDf = addToDF(rawSequenceGazeDataDf,calibSequenceDict['rawGazeData'])
+    
+    processedSequenceDataDf = processedSequenceDataDf.reset_index(drop=True)
+
+    # The Trials
     for trIdx, trialResults in trialData.iterrows():
-
-        trialDict = processTrial(dataFolder, trialResults,len(trialData))
-
-        def addToDF(targetDF,dfIn):
-
-            return pd.concat([targetDF, dfIn])
-
-            # if( targetDF.empty ):
-            #     return dfIn
-            # else:
-            #     # targetDF = targetDF.append(dfIn)
-            #     return pd.concat([targetDF, dfIn])
+        #print(trialResults)
+        #exit()
+        trialDict = processTrial(dataFolder, trialResults,len(trialData), specificExport=specificExport)
+        if trialDict is None:
+            continue  # The specified export did not exist, keep going
 
         if (trialResults['trialType'] == 'interception'):
 
@@ -297,6 +463,9 @@ def unpackSession(subNum, doNotLoad = False):
             processedCalibDataDf = addToDF(processedCalibDataDf,trialDict['interpolatedData'])
             rawCalibUnityDataDf = addToDF(rawCalibUnityDataDf,trialDict['rawUnityData'])
             rawCalibGazeDataDf = addToDF(rawCalibGazeDataDf,trialDict['rawGazeData'])
+
+    # start_time 169.666
+    # end_time 170.676
 
     # Rename trialdata columns
     trialData.rename(columns={"session_num":"sessionNumber","trial_num":"trialNumber",
@@ -323,9 +492,10 @@ def unpackSession(subNum, doNotLoad = False):
     #subID = json.load( open(dataParentFolder + '/participantdetails/participant_details.csv'))['ppid']
     subID = trialData['ppid'][1] 
 
-    dictOut = {"subID": subID, "trialInfo": trialData.sort_index(axis=1),"expConfig": expDict,
+    dictOut = {"subID": subID, "plExportFolder": specificExport, "trialInfo": trialData.sort_index(axis=1),"expConfig": expDict,
         "rawExpUnity": rawExpUnityDataDf.sort_index(axis=1), "rawExpGaze": rawExpGazeDataDf.sort_index(axis=1), "processedExp": processedExpDataDf.sort_index(axis=1),
         "rawCalibUnity": rawCalibUnityDataDf.sort_index(axis=1), "rawCalibGaze": rawCalibGazeDataDf.sort_index(axis=1), "processedCalib": processedCalibDataDf.sort_index(axis=1),
+        "rawSequenceUnity": rawSequenceUnityDataDf, "rawSequenceGaze": rawSequenceGazeDataDf, "processedSequence": processedSequenceDataDf.sort_index(axis=1),
         "analysisParameters":analysisParameters}
 
     with open(picklePath, 'wb') as handle:

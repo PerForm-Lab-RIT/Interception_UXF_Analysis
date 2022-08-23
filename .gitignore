@@ -1,7 +1,9 @@
 Data/
 DataBackup/
 Figures/
+figOut/
 sessionFiles.pickle
+allSessionData.pickle
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
