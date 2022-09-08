@@ -285,17 +285,8 @@ def processTrial(dataFolder, trialResults, numTrials = False, specificExport=Non
     if(trialResults['trialType'] == 'CalibrationAssessment'):
 
         ## Import ball data and rename some columns
-        for key in trialResults.keys():
-            print(key, trialResults[key])
-            print()
-            print()
-            
-        
         dataFileName = '/'.join(trialResults['etassessment_calibrationAssessment_location_0'].split('/')[-2:])
         assessmentData = pd.read_csv(dataParentFolder + dataFileName)
-        
-        print(assessmentData)
-        exit()
         
         newKeys = ['frameTime']
         [newKeys.append(key[13:]) for key in assessmentData.keys()[1:]] # Fix a silly mistake I made when naming columns

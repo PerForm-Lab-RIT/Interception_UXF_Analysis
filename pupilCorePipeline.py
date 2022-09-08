@@ -37,6 +37,12 @@ import numpy as np
     is_flag=True
 )
 @click.option(
+    "--min_calibration_confidence",
+    required=False,
+    type=click.FloatRange(min=0.0, max=1.0),
+    default=0.0
+)
+@click.option(
     "--show_filtered_out",
     is_flag=True
 )
@@ -58,11 +64,11 @@ import numpy as np
     type=click.Path(exists=True),
     envvar="PLUGINS_CSV",
 )
-def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla, surpress_runtimewarnings, load_2d_pupils, show_filtered_out, core_shared_modules_loc, pipeline_loc, plugins_file):
+def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla, surpress_runtimewarnings, load_2d_pupils, min_calibration_confidence, show_filtered_out, core_shared_modules_loc, pipeline_loc, plugins_file):
     logging.basicConfig(level=logging.DEBUG)
     logging.getLogger("numexpr").setLevel(logging.WARNING)
     logging.getLogger("OpenGL").setLevel(logging.WARNING)
-    
+
     if surpress_runtimewarnings:
         import warnings
         warnings.filterwarnings("ignore", category=RuntimeWarning) 
@@ -153,10 +159,10 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
             realtime_calib_points_loc = rec_loc+'/realtime_calib_points.msgpack';
             if os.path.exists(realtime_calib_points_loc):
                 print("Using exported realtime calibration points.")
-                calibrated_gazer, pupil_data = calibrate_and_validate(reference_data_loc, pupil_data_loc, intrinsics_loc, mapping_method, realtime_ref_loc=realtime_calib_points_loc)
+                calibrated_gazer, pupil_data = calibrate_and_validate(reference_data_loc, pupil_data_loc, intrinsics_loc, mapping_method, realtime_ref_loc=realtime_calib_points_loc, min_calibration_confidence=min_calibration_confidence)
             else:
                 print("Realtime calibration points have not been exported.")
-                calibrated_gazer, pupil_data = calibrate_and_validate(reference_data_loc, pupil_data_loc, intrinsics_loc, mapping_method)
+                calibrated_gazer, pupil_data = calibrate_and_validate(reference_data_loc, pupil_data_loc, intrinsics_loc, mapping_method, min_calibration_confidence=min_calibration_confidence)
             
             #rr_data = load_realtime_ref_data(realtime_calib_points_loc)
             #rr_data = np.array([rr_data[i]['screen_pos'] for i in range(len(rr_data))])
