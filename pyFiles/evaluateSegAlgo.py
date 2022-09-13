@@ -194,9 +194,18 @@ def calcTrialLevelCalibInfo(sessionIn):
                 width = np.nan
 
             elif( sum(procDF['isHeadFixed'] == True) == len(procDF) ):
+
+                #print(procDF['radiusDegrees'])  # Target ring radius
+                #print(procDF['targetRadiusInDegrees'])  # Radius of actual target dot
                 
-                height = np.float(procDF['elevationHeight'].drop_duplicates())
-                width = np.float(procDF['azimuthWidth'].drop_duplicates())
+                try:
+                    # HxW Grid
+                    height = np.float(procDF['elevationHeight'].drop_duplicates())
+                    width = np.float(procDF['azimuthWidth'].drop_duplicates())
+                except KeyError as _:
+                    # R-radius ring
+                    height = np.float(procDF['radiusDegrees'].drop_duplicates())
+                    width = np.float(procDF['radiusDegrees'].drop_duplicates())
                     
                 # Count the number of target positions within the local space (head-centered space)
                 if( len(procDF['targeLocalPos'].drop_duplicates()) == 1 ):
@@ -245,6 +254,7 @@ def calcTrialLevelCalibInfo(sessionIn):
                 target_el = np.nan
         except KeyError as e:
             print('KeyError - trial setting to default')
+            print(e)
             targetType = 'unknown'
             height = np.nan
             width = np.nan
