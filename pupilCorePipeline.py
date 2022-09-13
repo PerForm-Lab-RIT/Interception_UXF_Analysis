@@ -41,6 +41,10 @@ import numpy as np
     is_flag=True
 )
 @click.option(
+    "--display_world_video",
+    is_flag=True
+)
+@click.option(
     "--core_shared_modules_loc",
     required=False,
     type=click.Path(exists=True),
@@ -58,7 +62,7 @@ import numpy as np
     type=click.Path(exists=True),
     envvar="PLUGINS_CSV",
 )
-def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla, surpress_runtimewarnings, load_2d_pupils, show_filtered_out, core_shared_modules_loc, pipeline_loc, plugins_file):
+def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla, surpress_runtimewarnings, load_2d_pupils, show_filtered_out, display_world_video, core_shared_modules_loc, pipeline_loc, plugins_file):
     logging.basicConfig(level=logging.DEBUG)
     logging.getLogger("numexpr").setLevel(logging.WARNING)
     logging.getLogger("OpenGL").setLevel(logging.WARNING)
@@ -67,6 +71,7 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
         import warnings
         warnings.filterwarnings("ignore", category=RuntimeWarning) 
     
+    print(pipeline_loc)
     sys.path.append(pipeline_loc)
     from core.pipeline import available_mapping_methods, patch_plugin_notify_all, calibrate_and_validate, map_pupil_data, save_gaze_data, get_first_realtime_ref_data_timestamp, get_first_ref_data_timestamp, get_last_realtime_ref_data_timestamp, get_last_ref_data_timestamp, load_realtime_ref_data
     from core.pupil_detection import perform_pupil_detection
@@ -139,7 +144,8 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
                                             world_file="world.mp4",
                                             load_2d_pupils=load_2d_pupils,
                                             start_model_timestamp=start_model_timestamp,
-                                            freeze_model_timestamp=freeze_model_timestamp
+                                            freeze_model_timestamp=freeze_model_timestamp,
+                                            display_world_video=display_world_video
                                         )
             logging.info("Pupil detection complete.")
         
