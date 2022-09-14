@@ -50,7 +50,11 @@ def getSubjectSubFolders(subNum,printSessionID=False):
 
     # I always open the lowest valued sessionfolder (e.g. S001)
     plSessionFolderList = []
-    [plSessionFolderList.append(name) for name in os.listdir(dataFolder + '/PupilData') if name[0] is not '.']
+    try:
+        [plSessionFolderList.append(name) for name in os.listdir(dataFolder + '/PupilData') if name[0] is not '.']
+    except FileNotFoundError as _:
+        dataFolder += "S001/"
+        [plSessionFolderList.append(name) for name in os.listdir(dataFolder + '/PupilData') if name[0] is not '.']
 
     # eg. pupilSessionFolder = /P_201219105516_sub2/S001/PupilData/000/
     pupilSessionFolder = dataFolder + 'PupilData/' + plSessionFolderList[0] + '/'
@@ -380,6 +384,9 @@ def unpackSession(subNum, load_realtime_ref_data, doNotLoad = False, specificExp
     
 
     dataParentFolder = "Data/" + dataFolderList[subNum]
+    from os import path
+    if path.isdir(dataParentFolder+"/S001"):
+        dataParentFolder += "/S001"
     dataSubFolderList = []
     [dataSubFolderList.append(name) for name in os.listdir(dataParentFolder) if name[0] != '.']
     dataFolder = dataParentFolder + '/' + dataSubFolderList[0] + '/'
@@ -388,7 +395,6 @@ def unpackSession(subNum, load_realtime_ref_data, doNotLoad = False, specificExp
 
     # Try to load pickle if doNotLoad == False
     picklePath = dataFolder + dataSubFolderList[0] + '.pickle'
-    from os import path
     if( doNotLoad == False and path.exists(picklePath)):
         
         file = open(picklePath, 'rb')
@@ -415,7 +421,7 @@ def unpackSession(subNum, load_realtime_ref_data, doNotLoad = False, specificExp
     processedCalibDataDf = pd.DataFrame()
 
     trialData = pd.read_csv( dataParentFolder + '/trial_results.csv')
-    
+
     def addToDF(targetDF,dfIn):
 
         return pd.concat([targetDF, dfIn])

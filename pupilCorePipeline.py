@@ -115,7 +115,7 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
     
     for name in [item for item in os.listdir("Data/") if item[0:9] == '_Pipeline']:
         subject_loc = os.path.join("Data/", name)
-        rec_loc = os.path.join(subject_loc, 'PupilData/000')
+        rec_loc = os.path.join(subject_loc, 'S001/PupilData/000')
         logging.info(f'Proccessing {rec_loc} through pipeline...')
         
         reference_data_loc = rec_loc+'/offline_data/reference_locations.msgpack'
@@ -165,10 +165,10 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
             realtime_calib_points_loc = rec_loc+'/realtime_calib_points.msgpack';
             if os.path.exists(realtime_calib_points_loc):
                 print("Using exported realtime calibration points.")
-                calibrated_gazer, pupil_data = calibrate_and_validate(reference_data_loc, pupil_data_loc, intrinsics_loc, mapping_method, realtime_ref_loc=realtime_calib_points_loc, min_calibration_confidence=min_calibration_confidence)
+                calibrated_gazer, pupil_data = calibrate_and_validate(reference_data_loc, pupil_data_loc, intrinsics_loc, mapping_method, realtime_ref_loc=realtime_calib_points_loc)#, min_calibration_confidence=min_calibration_confidence)
             else:
                 print("Realtime calibration points have not been exported.")
-                calibrated_gazer, pupil_data = calibrate_and_validate(reference_data_loc, pupil_data_loc, intrinsics_loc, mapping_method, min_calibration_confidence=min_calibration_confidence)
+                calibrated_gazer, pupil_data = calibrate_and_validate(reference_data_loc, pupil_data_loc, intrinsics_loc, mapping_method)#, min_calibration_confidence=min_calibration_confidence)
             
             #rr_data = load_realtime_ref_data(realtime_calib_points_loc)
             #rr_data = np.array([rr_data[i]['screen_pos'] for i in range(len(rr_data))])
