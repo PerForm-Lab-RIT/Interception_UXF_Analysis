@@ -26,10 +26,14 @@ fmt = '%(levelname)s_%(name)s-%(funcName)s(): - %(message)s'
 logging.basicConfig(level=logging.INFO, format=fmt)
 logger = logging.getLogger(__name__)
 
-def calibAssessment(sessionDictIn,saveDir = 'figout/', confidenceThresh = False, title="", show_filtered_out=False):
+def calibAssessment(sessionDictIn,saveDir = 'figout/', confidenceThresh = False, title="", show_filtered_out=False, override_to_2d=False):
     
     sessionDictIn = ev.calcCyclopean(sessionDictIn, 'processedCalib')
-    sessionDictIn = ev.calcCyclopean(sessionDictIn, 'processedExp')
+    try:
+        sessionDictIn = ev.calcCyclopean(sessionDictIn, 'processedExp')
+        ball_catching = True
+    except KeyError:
+        ball_catching = False
     sessionDictIn = ev.calcCyclopean(sessionDictIn, 'processedSequence')
     
     #print(sessionDictIn['processedCalib']['targetPos'])
@@ -42,9 +46,11 @@ def calibAssessment(sessionDictIn,saveDir = 'figout/', confidenceThresh = False,
     #exit()
     
     sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'targetPos','targetWorldSpherical', sessionDictKey = 'processedCalib')
-    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'ballPos','targetWorldSpherical', sessionDictKey = 'processedExp')
+    if ball_catching:
+        sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'ballPos','targetWorldSpherical', sessionDictKey = 'processedExp')
     sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'targeLocalPos','targetLocalSpherical', sessionDictKey = 'processedCalib')
-    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'ballPos','targetLocalSpherical', sessionDictKey = 'processedExp')  # Should be something like ballLocalPos
+    if ball_catching:
+        sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'ballPos','targetLocalSpherical', sessionDictKey = 'processedExp')  # Should be something like ballLocalPos
     sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn, 'screen-pos', 'targetLocalSpherical', sessionDictKey = 'processedSequence')
     
     #print(sessionDictIn['processedCalib']['targeLocalPos'])
@@ -57,17 +63,20 @@ def calibAssessment(sessionDictIn,saveDir = 'figout/', confidenceThresh = False,
     #print(sessionDictIn['processedCalib'].loc[0]['targetLocalSpherical', 'az'], sessionDictIn['processedCalib'].loc[0]['targetLocalSpherical', 'el'])
     #exit()
     
-    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal0','gaze0Spherical', sessionDictKey = 'processedCalib',flipY=True)
-    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal0','gaze0Spherical', sessionDictKey = 'processedExp',flipY=True)
-    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal0','gaze0Spherical', sessionDictKey = 'processedSequence',flipY=True)
-    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal1','gaze1Spherical', sessionDictKey = 'processedCalib',flipY=True)
-    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal1','gaze1Spherical', sessionDictKey = 'processedExp',flipY=True)
-    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal1','gaze1Spherical', sessionDictKey = 'processedSequence',flipY=True)
-    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal2','gaze2Spherical', sessionDictKey = 'processedCalib',flipY=True)
-    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal2','gaze2Spherical', sessionDictKey = 'processedExp',flipY=True)
-    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal2','gaze2Spherical', sessionDictKey = 'processedSequence',flipY=True)
+    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal0','gaze0Spherical', sessionDictKey = 'processedCalib',flipY=True,override_to_2d=('0' if override_to_2d else None))
+    if ball_catching:
+        sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal0','gaze0Spherical', sessionDictKey = 'processedExp',flipY=True,override_to_2d=('0' if override_to_2d else None))
+    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal0','gaze0Spherical', sessionDictKey = 'processedSequence',flipY=True,override_to_2d=('0' if override_to_2d else None))
+    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal1','gaze1Spherical', sessionDictKey = 'processedCalib',flipY=True,override_to_2d=('1' if override_to_2d else None))
+    if ball_catching:
+        sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal1','gaze1Spherical', sessionDictKey = 'processedExp',flipY=True,override_to_2d=('1' if override_to_2d else None))
+    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal1','gaze1Spherical', sessionDictKey = 'processedSequence',flipY=True,override_to_2d=('1' if override_to_2d else None))
+    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal2','gaze2Spherical', sessionDictKey = 'processedCalib',flipY=True,override_to_2d=('' if override_to_2d else None))
+    if ball_catching:
+        sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal2','gaze2Spherical', sessionDictKey = 'processedExp',flipY=True,override_to_2d=('' if override_to_2d else None))
+    sessionDictIn = ev.calcSphericalCoordinates(sessionDictIn,'gaze-normal2','gaze2Spherical', sessionDictKey = 'processedSequence',flipY=True,override_to_2d=('' if override_to_2d else None))
     
-    sessionDictIn = ev.calcTrialLevelCalibInfo(sessionDictIn)
+    sessionDictIn = ev.calcTrialLevelCalibInfo(sessionDictIn, ball_catching=ball_catching)
     
     sessionDictIn = ev.calcGazeToTargetFixError(sessionDictIn,'gaze0Spherical','targetLocalSpherical','fixError_eye0', sessionDictKey='processedCalib')
     #sessionDictIn = ev.calcGazeToTargetFixError(sessionDictIn,'gaze0Spherical','targetLocalSpherical','fixError_eye0', sessionDictKey='processedExp')
@@ -83,7 +92,7 @@ def calibAssessment(sessionDictIn,saveDir = 'figout/', confidenceThresh = False,
     # sessionDictIn['trialInfo']['fixTargetSpherical','az'] = sessionDictIn['trialInfo']['fixTargetSpherical','az'].round(2)
     # sessionDictIn['trialInfo']['fixTargetSpherical','el'] = sessionDictIn['trialInfo']['fixTargetSpherical','el'].round(2)
 
-    sessionDictIn = ev.calcAverageGazeDirPerTrial(sessionDictIn)
+    sessionDictIn = ev.calcAverageGazeDirPerTrial(sessionDictIn, ball_catching=ball_catching)
     sessionDictIn = ev.calcAverageGazeDirPerCalibTrial(sessionDictIn)
     
     sessionDictIn = ev.calcCalibrationSequenceStatistics(sessionDictIn, confidenceThresh)
@@ -99,7 +108,7 @@ def calibAssessment(sessionDictIn,saveDir = 'figout/', confidenceThresh = False,
 
     return sessionDictIn
 
-def processAllData(confidenceThresh=False,doNotLoad = True, saveDir = 'figOut/', targets=[], show_filtered_out=False, load_realtime_ref_data=None):
+def processAllData(confidenceThresh=False,doNotLoad = True, saveDir = 'figOut/', targets=[], show_filtered_out=False, load_realtime_ref_data=None, override_to_2d=False):
 
     allSessionData = []
 
@@ -114,6 +123,7 @@ def processAllData(confidenceThresh=False,doNotLoad = True, saveDir = 'figOut/',
         folderDict = ld.getSubjectSubFolders(subNum)
 
         for expNum, exportFolderString in enumerate(folderDict['pupilExportsFolderList']):
+
             if len(targets) == 0 or exportFolderString in targets:
                 
                 #sessionDict = ld.unpackSession(subNum, exportFolderString, doNotLoad=doNotLoad)
@@ -126,8 +136,8 @@ def processAllData(confidenceThresh=False,doNotLoad = True, saveDir = 'figOut/',
                     os.stat(currSaveDir)
                 except:
                     os.makedirs(currSaveDir, exist_ok=True)
-                
-                sessionDict = calibAssessment(sessionDict, saveDir=currSaveDir, confidenceThresh=confidenceThresh, title=subString, show_filtered_out=show_filtered_out)
+
+                sessionDict = calibAssessment(sessionDict, saveDir=currSaveDir, confidenceThresh=confidenceThresh, title=subString, show_filtered_out=show_filtered_out, override_to_2d=override_to_2d)
                 allSessionData.append(sessionDict)
 
     return allSessionData

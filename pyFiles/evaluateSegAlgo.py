@@ -66,16 +66,22 @@ def calcAverageGazeDirPerCalibTrial(sessionDictIn):
     return sessionDictIn
     
 
-def calcAverageGazeDirPerTrial(sessionDictIn):
+def calcAverageGazeDirPerTrial(sessionDictIn, ball_catching=True):
     gbProcessedCalib_trial = sessionDictIn['processedCalib'].groupby(['trialNumber'])
-    gbProcessedExp_trial = sessionDictIn['processedExp'].groupby(['trialNumber'])
+    if ball_catching:
+        gbProcessedExp_trial = sessionDictIn['processedExp'].groupby(['trialNumber'])
     
     mean0ErrorCalibAz = gbProcessedCalib_trial.agg([np.nanmean])[('gaze0Spherical','az','nanmean')]
-    mean0ErrorExpAz = gbProcessedExp_trial.agg([np.nanmean])[('gaze0Spherical','az','nanmean')]
+    if ball_catching:
+        mean0ErrorExpAz = gbProcessedExp_trial.agg([np.nanmean])[('gaze0Spherical','az','nanmean')]
     mean0ErrorCalibEl = gbProcessedCalib_trial.agg([np.nanmean])[('gaze0Spherical','az','nanmean')]
-    mean0ErrorExpEl = gbProcessedExp_trial.agg([np.nanmean])[('gaze0Spherical','az','nanmean')]
-    mean0ErrorAz = pd.concat([mean0ErrorCalibAz, mean0ErrorExpAz])
-    mean0ErrorEl = pd.concat([mean0ErrorCalibEl, mean0ErrorExpEl])
+    if ball_catching:
+        mean0ErrorExpEl = gbProcessedExp_trial.agg([np.nanmean])[('gaze0Spherical','az','nanmean')]
+        mean0ErrorAz = pd.concat([mean0ErrorCalibAz, mean0ErrorExpAz])
+        mean0ErrorEl = pd.concat([mean0ErrorCalibEl, mean0ErrorExpEl])
+    else:
+        mean0ErrorAz = mean0ErrorCalibAz
+        mean0ErrorEl = mean0ErrorCalibEl
     sessionDictIn['trialInfo'][('meanGaze0_Spherical','az')] = mean0ErrorAz
     sessionDictIn['trialInfo'][('meanGaze0_Spherical','el')] = mean0ErrorEl
     
@@ -83,11 +89,16 @@ def calcAverageGazeDirPerTrial(sessionDictIn):
     #sessionDictIn['trialInfo'][('meanGaze0_Spherical','el')] = gbProcessedCalib_trial.agg([np.nanmean])[('gaze0Spherical','el','nanmean')].values
 
     mean1ErrorCalibAz = gbProcessedCalib_trial.agg([np.nanmean])[('gaze1Spherical','az','nanmean')]
-    mean1ErrorExpAz = gbProcessedExp_trial.agg([np.nanmean])[('gaze1Spherical','az','nanmean')]
+    if ball_catching:
+        mean1ErrorExpAz = gbProcessedExp_trial.agg([np.nanmean])[('gaze1Spherical','az','nanmean')]
     mean1ErrorCalibEl = gbProcessedCalib_trial.agg([np.nanmean])[('gaze1Spherical','az','nanmean')]
-    mean1ErrorExpEl = gbProcessedExp_trial.agg([np.nanmean])[('gaze1Spherical','az','nanmean')]
-    mean1ErrorAz = pd.concat([mean1ErrorCalibAz, mean1ErrorExpAz])
-    mean1ErrorEl = pd.concat([mean1ErrorCalibEl, mean1ErrorExpEl])
+    if ball_catching:
+        mean1ErrorExpEl = gbProcessedExp_trial.agg([np.nanmean])[('gaze1Spherical','az','nanmean')]
+        mean1ErrorAz = pd.concat([mean1ErrorCalibAz, mean1ErrorExpAz])
+        mean1ErrorEl = pd.concat([mean1ErrorCalibEl, mean1ErrorExpEl])
+    else:
+        mean1ErrorAz = mean1ErrorCalibAz
+        mean1ErrorEl = mean1ErrorCalibEl
     sessionDictIn['trialInfo'][('meanGaze1_Spherical','az')] = mean1ErrorAz
     sessionDictIn['trialInfo'][('meanGaze1_Spherical','el')] = mean1ErrorEl
 
@@ -95,11 +106,16 @@ def calcAverageGazeDirPerTrial(sessionDictIn):
     #sessionDictIn['trialInfo'][('meanGaze1_Spherical','el')] = gbProcessedCalib_trial.agg([np.nanmean])[('gaze1Spherical','el','nanmean')].values
     
     mean2ErrorCalibAz = gbProcessedCalib_trial.agg([np.nanmean])[('gaze2Spherical','az','nanmean')]
-    mean2ErrorExpAz = gbProcessedExp_trial.agg([np.nanmean])[('gaze2Spherical','az','nanmean')]
+    if ball_catching:
+        mean2ErrorExpAz = gbProcessedExp_trial.agg([np.nanmean])[('gaze2Spherical','az','nanmean')]
     mean2ErrorCalibEl = gbProcessedCalib_trial.agg([np.nanmean])[('gaze2Spherical','az','nanmean')]
-    mean2ErrorExpEl = gbProcessedExp_trial.agg([np.nanmean])[('gaze2Spherical','az','nanmean')]
-    mean2ErrorAz = pd.concat([mean2ErrorCalibAz, mean2ErrorExpAz])
-    mean2ErrorEl = pd.concat([mean2ErrorCalibEl, mean2ErrorExpEl])
+    if ball_catching:
+        mean2ErrorExpEl = gbProcessedExp_trial.agg([np.nanmean])[('gaze2Spherical','az','nanmean')]
+        mean2ErrorAz = pd.concat([mean2ErrorCalibAz, mean2ErrorExpAz])
+        mean2ErrorEl = pd.concat([mean2ErrorCalibEl, mean2ErrorExpEl])
+    else:
+        mean2ErrorAz = mean2ErrorCalibAz
+        mean2ErrorEl = mean2ErrorCalibEl
     sessionDictIn['trialInfo'][('meanGaze2_Spherical','az')] = mean2ErrorAz
     sessionDictIn['trialInfo'][('meanGaze2_Spherical','el')] = mean2ErrorEl
     
@@ -108,9 +124,7 @@ def calcAverageGazeDirPerTrial(sessionDictIn):
     
     return sessionDictIn
 
-
 def calcCyclopean(sessionDictIn, sessionDictKey='processedExp'):
-
     xyz = (sessionDictIn[sessionDictKey]['gaze-normal0'] + sessionDictIn[sessionDictKey]['gaze-normal1']) / 2.0
 
     sessionDictIn[sessionDictKey][('gaze-normal2','x')] = xyz['x']
@@ -131,17 +145,27 @@ def normalizeVector(xyz):
     return xyz
 
 
-def calcSphericalCoordinates(sessionDictIn,columnName,newColumnName,sessionDictKey='processedExp', flipY = False):
+def calcSphericalCoordinates(sessionDictIn,columnName,newColumnName,sessionDictKey='processedExp', flipY = False, override_to_2d = None):
 
     dataDict = sessionDictIn[sessionDictKey]
-    try:
-        dataDict[(newColumnName,'az')] = np.rad2deg(np.arctan2(dataDict[(columnName,'x')],dataDict[(columnName,'z')]))
-        dataDict[(newColumnName,'el')] = np.rad2deg(np.arctan2(dataDict[(columnName,'y')],dataDict[(columnName,'z')]))
-    except Exception as e:
-        print(e)
-        print(dataDict.keys())
-        exit()
     
+    if override_to_2d is not None and ('deprojected-norm-pos'+override_to_2d,'x') in dataDict.columns and ('deprojected-norm-pos'+override_to_2d,'y') in dataDict.columns and ('deprojected-norm-pos'+override_to_2d,'z') in dataDict.columns:
+        try:
+            dataDict[(newColumnName,'az')] = np.rad2deg(np.arctan2(dataDict[('deprojected-norm-pos'+override_to_2d,'x')],dataDict[('deprojected-norm-pos'+override_to_2d,'z')]))
+            dataDict[(newColumnName,'el')] = np.rad2deg(np.arctan2(dataDict[('deprojected-norm-pos'+override_to_2d,'y')],dataDict[('deprojected-norm-pos'+override_to_2d,'z')]))
+        except Exception as e:
+            print(e)
+            print(dataDict.keys())
+            exit()
+    else:
+        try:
+            dataDict[(newColumnName,'az')] = np.rad2deg(np.arctan2(dataDict[(columnName,'x')],dataDict[(columnName,'z')]))
+            dataDict[(newColumnName,'el')] = np.rad2deg(np.arctan2(dataDict[(columnName,'y')],dataDict[(columnName,'z')]))
+        except Exception as e:
+            print(e)
+            print(dataDict.keys())
+            exit()
+
     if flipY:
         dataDict[(newColumnName,'el')] = -    dataDict[(newColumnName,'el')]
 
@@ -152,14 +176,15 @@ def calcSphericalCoordinates(sessionDictIn,columnName,newColumnName,sessionDictK
     
     return sessionDictIn
 
-def calcTrialLevelCalibInfo(sessionIn):
+def calcTrialLevelCalibInfo(sessionIn, ball_catching=True):
     '''
     Input: Session dictionary
     Output:  Session dictionary with new column sessionDict['trialInfo']['targetType']
     '''
     
     gbProcessedCalib_trial = sessionIn['processedCalib'].groupby(['trialNumber'])
-    gbProcessedExp_trial = sessionIn['processedExp'].groupby(['trialNumber'])
+    if ball_catching:
+        gbProcessedExp_trial = sessionIn['processedExp'].groupby(['trialNumber'])
     
     targetTypes = []
     gridSize_height = []
@@ -180,7 +205,10 @@ def calcTrialLevelCalibInfo(sessionIn):
         except KeyError as e:
             # This trial is in processedExp, not processedCalib.
             print("This is processedExp")
-            procDF = gbProcessedExp_trial.get_group(int(trMetaData['trialNumber']))
+            if ball_catching:
+                procDF = gbProcessedExp_trial.get_group(int(trMetaData['trialNumber']))
+            else:
+                continue
 
         targetType = []
         height = []
@@ -349,17 +377,25 @@ def calcGazeToTargetFixError(sessionDictIn,gazeLabelIn,targetLabelIn,columnOutLa
     sessionDictIn[sessionDictKey][(columnOutLabel,'az')] = sessionDictIn[sessionDictKey].apply(lambda row: row[(gazeLabelIn,'az')] -  row[(targetLabelIn,'az')],axis=1 )
     sessionDictIn[sessionDictKey][(columnOutLabel,'el')] = sessionDictIn[sessionDictKey].apply(lambda row: row[(gazeLabelIn,'el')] -  row[(targetLabelIn,'el')],axis=1 )
     sessionDictIn[sessionDictKey][(columnOutLabel,'euclidean')] = np.sqrt(sessionDictIn[sessionDictKey][(columnOutLabel,'az')]**2 + sessionDictIn[sessionDictKey][(columnOutLabel,'el')]**2)
-    
-    sessionDictIn['processedExp'][(columnOutLabel,'az')] = sessionDictIn['processedExp'].apply(lambda row: row[(gazeLabelIn,'az')] -  row[(targetLabelIn,'az')],axis=1 )
-    sessionDictIn['processedExp'][(columnOutLabel,'el')] = sessionDictIn['processedExp'].apply(lambda row: row[(gazeLabelIn,'el')] -  row[(targetLabelIn,'el')],axis=1 )
-    sessionDictIn['processedExp'][(columnOutLabel,'euclidean')] = np.sqrt(sessionDictIn['processedExp'][(columnOutLabel,'az')]**2 + sessionDictIn['processedExp'][(columnOutLabel,'el')]**2)
+
+    try:
+        sessionDictIn['processedExp'][(columnOutLabel,'az')] = sessionDictIn['processedExp'].apply(lambda row: row[(gazeLabelIn,'az')] -  row[(targetLabelIn,'az')],axis=1 )
+        ball_catching = True
+    except ValueError:
+        ball_catching = False
+
+    if ball_catching:
+        sessionDictIn['processedExp'][(columnOutLabel,'el')] = sessionDictIn['processedExp'].apply(lambda row: row[(gazeLabelIn,'el')] -  row[(targetLabelIn,'el')],axis=1 )
+        sessionDictIn['processedExp'][(columnOutLabel,'euclidean')] = np.sqrt(sessionDictIn['processedExp'][(columnOutLabel,'az')]**2 + sessionDictIn['processedExp'][(columnOutLabel,'el')]**2)
     
     # Group by trial, so that we can average within trial
     gbProcessedCalib_trial = sessionDictIn[sessionDictKey].groupby(['trialNumber'])
-    gbProcessedExp_trial = sessionDictIn['processedExp'].groupby(['trialNumber'])
+    if ball_catching:
+        gbProcessedExp_trial = sessionDictIn['processedExp'].groupby(['trialNumber'])
     
     meanErrorCalib = gbProcessedCalib_trial.agg(np.nanmean)[columnOutLabel]
-    meanErrorExp = gbProcessedExp_trial.agg(np.nanmean)[columnOutLabel]
+    if ball_catching:
+        meanErrorExp = gbProcessedExp_trial.agg(np.nanmean)[columnOutLabel]
     meanOutLabel = 'mean' + columnOutLabel[0].capitalize() + columnOutLabel[1:]
 
     # Add it back into the trialInfo dataframe
@@ -380,8 +416,12 @@ def calcGazeToTargetFixError(sessionDictIn,gazeLabelIn,targetLabelIn,columnOutLa
     #pd.concat([meanError['az'], azList])
     #pd.concat([meanError['el'], elList])
     
-    meanErrorAz = pd.concat([meanError['az'], meanErrorExp['az']])
-    meanErrorEl = pd.concat([meanError['el'], meanErrorExp['el']])
+    if ball_catching:
+        meanErrorAz = pd.concat([meanError['az'], meanErrorExp['az']])
+        meanErrorEl = pd.concat([meanError['el'], meanErrorExp['el']])
+    else:
+        meanErrorAz = meanError['az']
+        meanErrorEl = meanError['el']
     
     #meanError['az'].concat(azList)
     #meanError['el'].concat(elList)
@@ -392,12 +432,17 @@ def calcGazeToTargetFixError(sessionDictIn,gazeLabelIn,targetLabelIn,columnOutLa
     sessionDictIn['trialInfo'][(meanOutLabel,'euclidean')] = np.sqrt( meanErrorAz.values**2 + meanErrorEl.values**2)
     
     stdErrorCalib = gbProcessedCalib_trial.agg(np.nanstd)[columnOutLabel] 
-    stdErrorExp = gbProcessedExp_trial.agg(np.nanstd)[columnOutLabel] 
+    if ball_catching:
+        stdErrorExp = gbProcessedExp_trial.agg(np.nanstd)[columnOutLabel] 
     stdOutLabel = 'std' + columnOutLabel[0].capitalize() + columnOutLabel[1:]
-    
-    stdErrorAz = pd.concat([stdErrorCalib['az'], stdErrorExp['az']])
-    stdErrorEl = pd.concat([stdErrorCalib['el'], stdErrorExp['el']])
-    
+
+    if ball_catching:
+        stdErrorAz = pd.concat([stdErrorCalib['az'], stdErrorExp['az']])
+        stdErrorEl = pd.concat([stdErrorCalib['el'], stdErrorExp['el']])
+    else:
+        stdErrorAz = stdErrorCalib['az']
+        stdErrorEl = stdErrorCalib['el']
+
     sessionDictIn['trialInfo'][(stdOutLabel,'az')] = stdErrorAz#stdError['az'].values
     sessionDictIn['trialInfo'][(stdOutLabel,'el')] = stdErrorEl#stdError['el'].values
     

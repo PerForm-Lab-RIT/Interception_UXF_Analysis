@@ -1,5 +1,6 @@
 #/home/kdb2713/PL Integration/Pupil-Labs-Core-RITnet-Plugins,plugins.detector_2d_ritnet_ellseg_pupil_plugin,Detector2DRITnetEllsegAllvonePlugin
 #/home/kdb2713/PL Integration/Pupil-Labs-Core-RITnet-Plugins,plugins.detector_2d_ritnet_bestmodel_plugin,Detector2DRITnetBestmodelPlugin
 #/home/kdb2713/PL Integration/Pupil-Labs-Core-RITnet-Plugins,plugins.detector_2d_ritnet_400400_plugin,Detector2DRITnet400400Plugin
-#/home/kdb2713/PL Integration/Pupil-Labs-Core-RITnet-Plugins,plugins.detector_2d_ritnet_pupil_plugin,Detector2DRITnetPupilPlugin
+/home/kdb2713/PL Integration/Pupil-Labs-Core-RITnet-Plugins,plugins.detector_2d_ritnet_pupil_plugin,Detector2DRITnetPupilPlugin
 /home/kdb2713/PL Integration/Pupil-Labs-Core-RITnet-Plugins,plugins.detector_2d_ritnet_ellsegv2_pupil_plugin,Detector2DRITnetEllsegV2AllvonePlugin
+/home/kdb2713/PL Integration/Pupil-Labs-Core-RITnet-Plugins,plugins.detector_2d_esfnet_pupil_plugin,Detector2DESFnetPlugin

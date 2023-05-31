@@ -2,8 +2,18 @@ Data/
 DataBackup/
 Figures/
 figOut/
+allSessionDataSTORAGE/
+DataARIANNA/
+DataCB/
+DataExcluded/
+DataPARTIAL/
+DataTEST/
+ZeroWorldIntrinsicsData/
 sessionFiles.pickle
 allSessionData.pickle
+*.png
+*.html
+*.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
