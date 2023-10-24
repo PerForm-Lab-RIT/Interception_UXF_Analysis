@@ -153,6 +153,13 @@ def calcSphericalCoordinates(sessionDictIn,columnName,newColumnName,sessionDictK
         try:
             dataDict[(newColumnName,'az')] = np.rad2deg(np.arctan2(dataDict[('deprojected-norm-pos'+override_to_2d,'x')],dataDict[('deprojected-norm-pos'+override_to_2d,'z')]))
             dataDict[(newColumnName,'el')] = np.rad2deg(np.arctan2(dataDict[('deprojected-norm-pos'+override_to_2d,'y')],dataDict[('deprojected-norm-pos'+override_to_2d,'z')]))
+            print(f"COLUMN NAME: {columnName}")
+            print(f"NEW COLUMN NAME: {newColumnName}")
+            print(f"SESSION DICT KEY: {sessionDictKey}")
+            print(f"DATADICT INDEXER: {('deprojected-norm-pos'+override_to_2d,'y')}")
+            #if columnName == 'gaze-normal0' and sessionDictKey == 'processedCalib':
+            #    for i in range(100000):
+            #        print(f"LEN OF DEPROJECTED NORMPOS X: {len(dataDict[('deprojected-norm-pos'+override_to_2d,'x')])}")
         except Exception as e:
             print(e)
             print(dataDict.keys())
@@ -377,6 +384,8 @@ def calcGazeToTargetFixError(sessionDictIn,gazeLabelIn,targetLabelIn,columnOutLa
     sessionDictIn[sessionDictKey][(columnOutLabel,'az')] = sessionDictIn[sessionDictKey].apply(lambda row: row[(gazeLabelIn,'az')] -  row[(targetLabelIn,'az')],axis=1 )
     sessionDictIn[sessionDictKey][(columnOutLabel,'el')] = sessionDictIn[sessionDictKey].apply(lambda row: row[(gazeLabelIn,'el')] -  row[(targetLabelIn,'el')],axis=1 )
     sessionDictIn[sessionDictKey][(columnOutLabel,'euclidean')] = np.sqrt(sessionDictIn[sessionDictKey][(columnOutLabel,'az')]**2 + sessionDictIn[sessionDictKey][(columnOutLabel,'el')]**2)
+
+    print("LEN OF EUCLIDEAN: {}".format(len(sessionDictIn[sessionDictKey][(columnOutLabel,'euclidean')])))
 
     try:
         sessionDictIn['processedExp'][(columnOutLabel,'az')] = sessionDictIn['processedExp'].apply(lambda row: row[(gazeLabelIn,'az')] -  row[(targetLabelIn,'az')],axis=1 )

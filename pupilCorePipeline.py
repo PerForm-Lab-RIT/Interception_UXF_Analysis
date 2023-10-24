@@ -12,6 +12,8 @@ from dotenv import load_dotenv
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import seaborn as sns
+import scipy
 
 @click.command()
 @click.option(
@@ -35,6 +37,10 @@ import pandas as pd
     is_flag=True
 )
 @click.option(
+    "--not_uxf",
+    is_flag=True
+)
+@click.option(
     "--load_2d_pupils",
     is_flag=True
 )
@@ -53,7 +59,15 @@ import pandas as pd
     is_flag=True
 )
 @click.option(
-    "--graphs_only",
+    "--skip_eye_tracking",
+    is_flag=True
+)
+@click.option(
+    "--load_pandas_checkpoint",
+    is_flag=True
+)
+@click.option(
+    "--skip_trial_assessment",
     is_flag=True
 )
 @click.option(
@@ -78,7 +92,29 @@ import pandas as pd
     type=click.Path(exists=True),
     envvar="PLUGINS_CSV",
 )
-def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla, surpress_runtimewarnings, load_2d_pupils, min_calibration_confidence, show_filtered_out, display_world_video, graphs_only, velocity_graphs, core_shared_modules_loc, pipeline_loc, plugins_file):
+@click.option(
+    "--figout_loc",
+    required=False,
+    type=click.Path(exists=False),
+    default="./figOut/"
+)
+@click.option(
+    "--allsessiondata_loader",
+    required=False,
+    type=click.Path(exists=False),
+    default="allSessionData.pickle"
+)
+def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla, surpress_runtimewarnings,
+        not_uxf, load_2d_pupils, min_calibration_confidence, show_filtered_out, display_world_video, skip_eye_tracking,
+        load_pandas_checkpoint, skip_trial_assessment, velocity_graphs, core_shared_modules_loc, pipeline_loc,
+        plugins_file, figout_loc, allsessiondata_loader):
+    
+    logging.getLogger('matplotlib.font_manager').disabled = True
+    logging.getLogger('matplotlib.axes').disabled = True
+    plt.set_loglevel(level = 'warning')
+    
+    if not os.path.exists(figout_loc):
+        os.makedirs(figout_loc)
     logging.basicConfig(level=logging.DEBUG)
     logging.getLogger("numexpr").setLevel(logging.WARNING)
     logging.getLogger("OpenGL").setLevel(logging.WARNING)
@@ -113,9 +149,7 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
             CurrPlugin = getattr(importlib.import_module(row[1]), row[2])
             plugins.append(CurrPlugin)
     
-    if not graphs_only:
-        logging.debug(f"Loaded pupil detector plugins: {plugins}")
-        
+    if (not skip_trial_assessment) or (not skip_eye_tracking):
         mapping_methods_by_label = available_mapping_methods()
         mapping_method_label = click.prompt(
             "Choose gaze mapping method",
@@ -127,20 +161,34 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
         skip_3d_detection = False
         if mapping_method_label == "2D":
             skip_3d_detection = True
+    
+    if not skip_eye_tracking:
+        logging.debug(f"Loaded pupil detector plugins: {plugins}")
 
+        total_items = len([item for item in os.listdir("Data/") if item[0:9] == '_Pipeline'])
+        if total_items == 0:
+            logging.error("No valid data folders found. Did you make sure to start the data folder names with '_Pipeline'?")
+            return
+
+        i = 0
         for name in [item for item in os.listdir("Data/") if item[0:9] == '_Pipeline']:
             subject_loc = os.path.join("Data/", name)
-            rec_loc = os.path.join(subject_loc, 'S001/PupilData/000')
+            rec_loc = os.path.join(subject_loc, '' if not_uxf else 'S001/PupilData/000')
             logging.info(f'Proccessing {rec_loc} through pipeline...')
             
             reference_data_loc = rec_loc+'/offline_data/reference_locations.msgpack'
+            total_plugins = len(plugins)
             if not skip_pupil_detection:
                 logging.info("Performing pupil detection on eye videos. This may take a while.")
+                j = 0
                 for plugin in plugins:
+                    j += 1
+                    logging.info(f"---------------[{i*total_plugins + j}/{total_items*total_plugins}]----------------")
                     logging.info(f"Current plugin: {plugin}")
                     # Checking to see if we can freeze the model at the first calibration point
                     realtime_calib_points_loc = rec_loc+'/realtime_calib_points.msgpack';
                     
+                    # --__--__--__--WE ARE FREEZING THE 3D EYE MODELS--__--__--__--
                     if os.path.exists(realtime_calib_points_loc):
                         start_model_timestamp = get_first_realtime_ref_data_timestamp(realtime_calib_points_loc)
                         freeze_model_timestamp = get_last_realtime_ref_data_timestamp(realtime_calib_points_loc)
@@ -151,21 +199,37 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
                         print("No reference data found, gaze prediction may fail.")
                         start_model_timestamp = None
                         freeze_model_timestamp = None
+
+                    resolution = int(name[14:17])
+                    if resolution == 192:
+                        eye_detector_params = [{
+                            # eye 0 params
+                            "intensity_range": 23,
+                            "pupil_size_min": 10,
+                            "pupil_size_max": 100
+                        }, {
+                            # eye 1 params
+                            "intensity_range": 23,
+                            "pupil_size_min": 10,
+                            "pupil_size_max": 100
+                        }]
+                    elif resolution == 400:
+                        eye_detector_params = [{
+                            # eye 0 params
+                            "intensity_range": 10,
+                            "pupil_size_min": 10,
+                            "pupil_size_max": 100
+                        }, {
+                            # eye 1 params
+                            "intensity_range": 10,
+                            "pupil_size_min": 10,
+                            "pupil_size_max": 100
+                        }]
+                    else:
+                        logging.error('RESOLUTION {} NOT SUPPORTED!'.format(resolution))
+                        exit()
                     
-                    #start_model_timestamp = None
-                    #freeze_model_timestamp = None
-                    
-                    perform_pupil_detection(rec_loc, plugin=plugin, pupil_params=[{
-                                                    # eye 0 params
-                                                    "intensity_range": 23,
-                                                    "pupil_size_min": 10,
-                                                    "pupil_size_max": 100
-                                                }, {
-                                                    # eye 1 params
-                                                    "intensity_range": 23,
-                                                    "pupil_size_min": 10,
-                                                    "pupil_size_max": 100
-                                                }],
+                    perform_pupil_detection(rec_loc, plugin=plugin, pupil_params=eye_detector_params,
                                                 world_file="world.mp4",
                                                 load_2d_pupils=load_2d_pupils,
                                                 start_model_timestamp=start_model_timestamp,
@@ -176,7 +240,10 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
                                             )
                 logging.info("Pupil detection complete.")
             
+            j = 0
             for plugin in plugins:
+                j += 1
+                logging.info(f"---------------[{i*total_plugins + j}/{total_items*total_plugins}]----------------")
                 logging.info(f"Exporting gaze data for plugin {plugin}")
                 if plugin is None:
                     pupil_data_loc = rec_loc + f"/offline_data/vanilla/offline_pupil.pldata"
@@ -198,14 +265,20 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
                     except FileNotFoundError:
                         print("No calibration points found.")
                         continue
-                
-                #rr_data = load_realtime_ref_data(realtime_calib_points_loc)
-                #rr_data = np.array([rr_data[i]['screen_pos'] for i in range(len(rr_data))])
-                
+
                 gaze, gaze_ts = map_pupil_data(calibrated_gazer, pupil_data, rec_loc)
                 save_gaze_data(gaze, gaze_ts, rec_loc, plugin=plugin)
+            i += 1
         
-        logging.info('All gaze data obtained. Generating trial charts.')
+        logging.info('All gaze data obtained.')
+        if not_uxf:
+            return
+    elif not_uxf:
+        logging.error('Only UXF gaze files can have fixation data graphed.')
+        return
+    
+    if not skip_trial_assessment:
+        logging.info('Generating trial charts.')
         targets = []
         if vanilla_only:
             targets.append('vanilla')
@@ -214,346 +287,472 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
         
         allSessionData = processAllData(doNotLoad=not allow_session_loading, confidenceThresh=0.00, targets=targets, show_filtered_out=show_filtered_out, load_realtime_ref_data=load_realtime_ref_data, override_to_2d=skip_3d_detection)
 
-        with open('allSessionData.pickle', 'wb') as handle:
+        with open(allsessiondata_loader, 'wb') as handle:
             pickle.dump(allSessionData, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    
+
     from pylab import savefig
 
-    filehandler = open(b"allSessionData.pickle","rb")
-    allSessionData = pickle.load(filehandler)
-    print(len(allSessionData))
-    print(allSessionData[0].keys())
-    print(len(allSessionData[0]['processedSequence'][('targetLocalSpherical', 'az')]))
-    #exit()
+    if not load_pandas_checkpoint:
+        filehandler = open(allsessiondata_loader, "rb")
+        allSessionData = pickle.load(filehandler)
+        print(f"LOADED {allsessiondata_loader}")
 
-    if velocity_graphs:
-        # THIS SECTION CURRENTLY ASSUMES 2D GAZE DATA (deprojected_norm_pos rather than gaze_normal)
-        for subjectFolder in next(os.walk('./Data'))[1]:
-            print("Processing velocity data for " + subjectFolder)
-            session = None
-            for d in allSessionData:
-                if d['subID'] == subjectFolder[-9:]:
-                    session = d
-                    break
-            if session is None:
-                # contingency for accidental _01/_02 formatting
+        if velocity_graphs:
+            # THIS SECTION CURRENTLY ASSUMES 2D GAZE DATA (deprojected_norm_pos rather than gaze_normal)
+            for subjectFolder in next(os.walk('./Data'))[1]:
+                print("Processing velocity data for " + subjectFolder)
+                session = None
                 for d in allSessionData:
-                    if d['subID'] == subjectFolder[-10:]:
+                    if d['subID'] == subjectFolder[-9:]:
                         session = d
                         break
-            gazeDataFolder = './Data/'+subjectFolder+'/S001/PupilData/000/Exports/'
-            
-            plt.figure()
-            ax = plt.subplot()
-            detect_non_saccads(gazeDataFolder, 'vanilla', 'Native', session, 'blue', ax)
-            detect_non_saccads(gazeDataFolder, 'Detector2DRITnetEllsegV2AllvonePlugin', 'EllSegGen', session, 'red', ax)
-            plt.clf()
-            plt.close('all')
-    
-    results_by_subject = {}
-    results_by_resolution = {}
-    results_by_eccentricity = {}
-    
-    i = 1
-    for sessionDict in allSessionData:
-        print()
-        try:
-            subject = int(sessionDict['subID'][0:3])
-            resolution = int(sessionDict['subID'][4:7])
-            run = int(sessionDict['subID'][8:])
-        except ValueError:
-            subject = sessionDict['subID'][0:-4]
-            resolution = int(sessionDict['subID'][-3:])
-            run = 1
-        plugin = sessionDict['plExportFolder']
-        if subject == 4:
-            continue
-        print(f"({i}/{len(allSessionData)})SUB {subject}, {resolution}x{resolution}, run {run} ({sessionDict['plExportFolder']}):")
-        i += 1
+                if session is None:
+                    # contingency for accidental _01/_02 formatting
+                    for d in allSessionData:
+                        if d['subID'] == subjectFolder[-10:]:
+                            session = d
+                            break
+                gazeDataFolder = './Data/'+subjectFolder+'/S001/PupilData/000/Exports/'
+                
+                plt.figure()
+                ax = plt.subplot()
+                detect_non_saccads(gazeDataFolder, 'vanilla', 'Native', session, 'blue', ax)
+                detect_non_saccads(gazeDataFolder, 'Detector2DRITnetEllsegV2AllvonePlugin', 'EllSegGen', session, 'red', ax)
+                plt.clf()
+                plt.close('all')
         
-        ecc_targetLoc_targNum_AzEl = sessionDict['processedCalib']['targetLocalSpherical'].drop_duplicates().values
-        # ---------- ACCURACY ----------
-        # THIS IS WHERE I ADJUST IT TO BE MORE LIKE THE PRECISION APPROACH BELOW
-        #       (meaning averaging up per-target and adding those to calibrationEuclideanFixErrors and analysisEuclideanFixErrors
-        #       instead of just adding every gaze point to them
-        """
-        OLD METHOD (every point is added)
-        calibrationEuclideanFixErrors = sessionDict['processedSequence'][('fixError_eye2', 'euclidean')].to_numpy()
-        analysisEuclideanFixErrors = sessionDict['processedCalib'][('fixError_eye2', 'euclidean')].to_numpy()
-        """
-        calibrationEuclideanFixErrors = []
-        targetLoc_targNum_AzEl = sessionDict['processedSequence']['targetLocalSpherical'].drop_duplicates().values
-        for tNum,(tX,tY) in enumerate(targetLoc_targNum_AzEl):
-            gbFixTrials = sessionDict['processedSequence'].groupby([('targetLocalSpherical','az'), ('targetLocalSpherical','el')])
-            trialsInGroup = gbFixTrials.get_group((tX,tY))
-            gbTrials = sessionDict['processedSequence'].groupby('trialNumber')
-            fixRowDataDf = gbTrials.get_group(trialsInGroup['trialNumber'].values[0])
-            for x in trialsInGroup['trialNumber'][1:]:
-                fixRowDataDf = pd.concat([fixRowDataDf,gbTrials.get_group(x)])
-            err_acc = np.sum(fixRowDataDf['fixError_eye2']['euclidean'].to_numpy()) / len(fixRowDataDf['fixError_eye2']['euclidean'].to_numpy())
-            calibrationEuclideanFixErrors.append(err_acc)
-
-        eccentricities = []
-        eccentricitiesAccDict = {}
-        analysisEuclideanFixErrors = []
-        fixDF = sessionDict['fixAssessmentData']
-        gb_h_w = fixDF.groupby([('gridSize', 'heightDegs'), ('gridSize', 'widthDegs')])
-        for (gHeight,gWidth) in list(gb_h_w.groups.keys()):
-            targetLoc_targNum_AzEl = gb_h_w.get_group((gHeight,gWidth))['fixTargetSpherical'].drop_duplicates().values
+        results_by_subject = {}
+        results_by_resolution = {}
+        results_by_eccentricity = {}
+        
+        i = 1
+        for sessionDict in allSessionData:
+            print()
+            try:
+                subject = int(sessionDict['subID'][0:3])
+                resolution = int(sessionDict['subID'][4:7])
+                run = int(sessionDict['subID'][8:])
+            except ValueError:
+                subject = sessionDict['subID'][0:-4]
+                resolution = int(sessionDict['subID'][-3:])
+                run = 1
+            
+            plugin = sessionDict['plExportFolder']
+            if subject == 4:
+                continue
+            print(f"({i}/{len(allSessionData)})SUB {subject}, {resolution}x{resolution}, run {run} ({sessionDict['plExportFolder']}):")
+            i += 1
+            
+            ecc_targetLoc_targNum_AzEl = sessionDict['processedCalib']['targetLocalSpherical'].drop_duplicates().values
+            # ---------- ACCURACY ----------
+            """
+            OLD METHOD (every point is added)
+            calibrationEuclideanFixErrors = sessionDict['processedSequence'][('fixError_eye2', 'euclidean')].to_numpy()
+            analysisEuclideanFixErrors = sessionDict['processedCalib'][('fixError_eye2', 'euclidean')].to_numpy()
+            """
+            pupil_0_X = np.array([])
+            pupil_0_Y = np.array([])
+            pupil_0_ts = np.array([])
+            calibrationEuclideanFixErrors = []
+            targetLoc_targNum_AzEl = sessionDict['processedSequence']['targetLocalSpherical'].drop_duplicates().values
             for tNum,(tX,tY) in enumerate(targetLoc_targNum_AzEl):
-                gbTargetType = sessionDict['trialInfo'].groupby(['targetType'])
-                fixTrialsDf = gbTargetType.get_group('fixation')
-                gbFixTrials = fixTrialsDf.groupby([('gridSize', 'heightDegs'), ('gridSize', 'widthDegs')])
-                fixTrialsDf = gbFixTrials.get_group((gHeight,gWidth))
-                gbFixTrials = fixTrialsDf.groupby([('fixTargetSpherical','az'),('fixTargetSpherical','el')])
+                gbFixTrials = sessionDict['processedSequence'].groupby([('targetLocalSpherical','az'), ('targetLocalSpherical','el')])
                 trialsInGroup = gbFixTrials.get_group((tX,tY))
-                gbTrials = sessionDict['processedCalib'].groupby('trialNumber')
+                gbTrials = sessionDict['processedSequence'].groupby('trialNumber')
                 fixRowDataDf = gbTrials.get_group(trialsInGroup['trialNumber'].values[0])
-                #print(trialsInGroup['trialNumber'][1:])
                 for x in trialsInGroup['trialNumber'][1:]:
                     fixRowDataDf = pd.concat([fixRowDataDf,gbTrials.get_group(x)])
-                err_acc = np.nansum(fixRowDataDf['fixError_eye2']['euclidean'].to_numpy()) / np.count_nonzero(~np.isnan(fixRowDataDf['fixError_eye2']['euclidean'].to_numpy()))
+                err_acc = np.nanmean(
+                    fixRowDataDf['fixError_eye2']['euclidean'].to_numpy()
+                )
+                if (tX,tY) == (0.0, 0.0):
+                    pupil_0_X = np.append(pupil_0_X, fixRowDataDf[fixRowDataDf[('pupil-centroid0', 'x')] > 0.0][('pupil-centroid0', 'x')].to_numpy())
+                    pupil_0_Y = np.append(pupil_0_Y, fixRowDataDf[fixRowDataDf[('pupil-centroid0', 'x')] > 0.0][('pupil-centroid0', 'y')].to_numpy())
+                    pupil_0_ts = np.append(pupil_0_ts, fixRowDataDf[fixRowDataDf[('pupil-centroid0', 'x')] > 0.0][('pupilTimestamp', '')].to_numpy())
+                calibrationEuclideanFixErrors.append(err_acc)
 
-                eccentricity = np.round(np.sqrt(tX**2 + tY**2))
-                if eccentricity not in eccentricities and not np.isnan(eccentricity):
-                    eccentricities.append(eccentricity)
-                if eccentricity in eccentricitiesAccDict:
-                    eccentricitiesAccDict[eccentricity].append(err_acc)
-                else:
-                    eccentricitiesAccDict[eccentricity] = [err_acc]
-                analysisEuclideanFixErrors.append(err_acc)
+            eccentricities = []
+            eccentricitiesAccDict = {}
+            analysisEuclideanFixErrors = []
+            fixDF = sessionDict['fixAssessmentData']
+            gb_h_w = fixDF.groupby([('gridSize', 'heightDegs'), ('gridSize', 'widthDegs')])
+            for (gHeight,gWidth) in list(gb_h_w.groups.keys()):
+                targetLoc_targNum_AzEl = gb_h_w.get_group((gHeight,gWidth))['fixTargetSpherical'].drop_duplicates().values
+                for tNum,(tX,tY) in enumerate(targetLoc_targNum_AzEl):
+                    gbTargetType = sessionDict['trialInfo'].groupby(['targetType'])
+                    fixTrialsDf = gbTargetType.get_group('fixation')
+                    gbFixTrials = fixTrialsDf.groupby([('gridSize', 'heightDegs'), ('gridSize', 'widthDegs')])
+                    fixTrialsDf = gbFixTrials.get_group((gHeight,gWidth))
+                    gbFixTrials = fixTrialsDf.groupby([('fixTargetSpherical','az'),('fixTargetSpherical','el')])
+                    trialsInGroup = gbFixTrials.get_group((tX,tY))
+                    gbTrials = sessionDict['processedCalib'].groupby('trialNumber')
 
-        sessionDict['processedCalib']['eccentricity'] = np.round(np.linalg.norm(sessionDict['processedCalib']['targetLocalSpherical'].values, axis=1))
-        #eccentricities = []
-        #for tNum,(tX,tY) in enumerate(ecc_targetLoc_targNum_AzEl):
-        #    eccentricity = np.round(np.sqrt(tX**2 + tY**2))
-        #    if eccentricity not in eccentricities and not np.isnan(eccentricity):
-        #        eccentricities.append(eccentricity)
-        
-        #eccentricitiesAccDict = {}
-        for eccentricity in eccentricities:
-            #gbEccentricity = sessionDict['processedCalib'].groupby('eccentricity')
-            #fixRowDataDf = gbEccentricity.get_group(eccentricity)
-            #err_acc = np.nansum(fixRowDataDf['fixError_eye2']['euclidean'].to_numpy()) / np.count_nonzero(~np.isnan(fixRowDataDf['fixError_eye2']['euclidean'].to_numpy()))
-            #eccentricitiesAccDict[eccentricity] = err_acc
-            eccentricitiesAccDict[eccentricity] = eccentricitiesAccDict[eccentricity]#np.mean(eccentricitiesAccDict[eccentricity])
+                    fixRowDataDFs = []
+                    for x in trialsInGroup['trialNumber']:
+                        fixRowDataDFs.append((x, gbTrials.get_group(x)))
+                    
+                    eccentricity = np.round(np.sqrt(tX**2 + tY**2))
+                    if eccentricity not in eccentricities and not np.isnan(eccentricity):
+                        eccentricities.append(eccentricity)
+                    for trialID, DFarr in fixRowDataDFs:
+                        if (tX, tY) == (0.0, 0.0):
+                            pupil_0_X = np.append(pupil_0_X, DFarr[DFarr[('pupil-centroid0', 'x')] > 0.0][('pupil-centroid0', 'x')].to_numpy())
+                            pupil_0_Y = np.append(pupil_0_Y, DFarr[DFarr[('pupil-centroid0', 'x')] > 0.0][('pupil-centroid0', 'y')].to_numpy())
+                            pupil_0_ts = np.append(pupil_0_ts, DFarr[DFarr[('pupil-centroid0', 'x')] > 0.0][('pupilTimestamp', '')].to_numpy())
+                        nparr = DFarr['fixError_eye2']['euclidean'].to_numpy()
+                        if eccentricity in eccentricitiesAccDict:
+                            eccentricitiesAccDict[eccentricity].append((trialID, nparr))#(nparr[np.logical_not(np.isnan(nparr))])
+                        else:
+                            eccentricitiesAccDict[eccentricity] = [(trialID, nparr)]#[nparr[np.logical_not(np.isnan(nparr))]]
+                        analysisEuclideanFixErrors.append(np.nanmean(nparr))
 
-        
-        # ---------- PRECISION ----------
-        targetLoc_targNum_AzEl = sessionDict['processedSequence']['targetLocalSpherical'].drop_duplicates().values
-        calibrationPrecision = np.nanstd(sessionDict['processedSequence'][('gaze2Spherical', 'az')])
-        calibration_precision_errors = []
-        for tNum,(tX,tY) in enumerate(targetLoc_targNum_AzEl):
-            gbFixTrials = sessionDict['processedSequence'].groupby([('targetLocalSpherical','az'), ('targetLocalSpherical','el')])
-            trialsInGroup = gbFixTrials.get_group((tX,tY))
-            gbTrials = sessionDict['processedSequence'].groupby('trialNumber')
-            fixRowDataDf = gbTrials.get_group(trialsInGroup['trialNumber'].values[0])
-            for x in trialsInGroup['trialNumber'][1:]:
-                fixRowDataDf = pd.concat([fixRowDataDf,gbTrials.get_group(x)])
-            
-            meanGazeAz = np.nanmean(fixRowDataDf['gaze2Spherical']['az'])  # sigma_a
-            meanGazeEl = np.nanmean(fixRowDataDf['gaze2Spherical']['el'])  # sigma_e
-            err_prec = np.sum(np.sqrt(np.square(fixRowDataDf['gaze2Spherical']['az'] - meanGazeAz) + np.square(fixRowDataDf['gaze2Spherical']['el'] - meanGazeEl))) / len(fixRowDataDf['gaze2Spherical']['az'])
-            calibration_precision_errors.append(err_prec)
-        
-        fixDF = sessionDict['fixAssessmentData']
-        gb_h_w = fixDF.groupby([('gridSize', 'heightDegs'), ('gridSize', 'widthDegs')])
-        analysis_precision_errors = []  # wrong position (now right position?)
-        eccentricitiesPrecDict = {}
-        for (gHeight,gWidth) in list(gb_h_w.groups.keys()):
-            targetLoc_targNum_AzEl = gb_h_w.get_group((gHeight,gWidth))['fixTargetSpherical'].drop_duplicates().values
-            
+            sessionDict['processedCalib']['eccentricity'] = np.round(np.linalg.norm(sessionDict['processedCalib']['targetLocalSpherical'].values, axis=1))
+
+            # [INTERMISSION] Plot the pupil 0 centroids of the (0.0, 0.0) targets over time
+            cppp_dir = f"./{figout_loc}/central_point_pupil_positions/"
+            if not os.path.exists(cppp_dir):
+                os.makedirs(cppp_dir)
+
+            fig, (ax0, ax1) = plt.subplots(2, 1)
+            ax0.plot(pupil_0_ts, pupil_0_X)
+            #ax0.set_ylim(bottom=0.58, top=0.63)
+            ax1.plot(pupil_0_ts, pupil_0_Y)
+            #ax1.set_ylim(bottom=0.44, top=0.46)
+            fig.suptitle(f"Pupil Centroids (x, y) During Central Fixations {subject}_{resolution}_{run} ({plugin})")
+            ax1.set_xlabel("Timestamp")
+            ax0.set_ylabel("Centroid Position (X)")
+            ax1.set_ylabel("Centroid Position (Y)")
+            plt.savefig(f'{cppp_dir}centroid_time_{subject}_{resolution}_{run}_eye{0}.png')
+
+            # ---------- PRECISION ----------
+            targetLoc_targNum_AzEl = sessionDict['processedSequence']['targetLocalSpherical'].drop_duplicates().values
+            calibrationPrecision = np.nanstd(sessionDict['processedSequence'][('gaze2Spherical', 'az')])
+            calibration_precision_errors = []
             for tNum,(tX,tY) in enumerate(targetLoc_targNum_AzEl):
-                #gbFixTrials = sessionDict['processedCalib'].groupby([('targetLocalSpherical','az'), ('targetLocalSpherical','el')])
-                gbTargetType = sessionDict['trialInfo'].groupby(['targetType'])
-                fixTrialsDf = gbTargetType.get_group('fixation')
-                gbFixTrials = fixTrialsDf.groupby([('gridSize', 'heightDegs'), ('gridSize', 'widthDegs')])
-                fixTrialsDf = gbFixTrials.get_group((gHeight,gWidth))
-                gbFixTrials = fixTrialsDf.groupby([('fixTargetSpherical','az'),('fixTargetSpherical','el')])
+                gbFixTrials = sessionDict['processedSequence'].groupby([('targetLocalSpherical','az'), ('targetLocalSpherical','el')])
                 trialsInGroup = gbFixTrials.get_group((tX,tY))
-                gbTrials = sessionDict['processedCalib'].groupby('trialNumber')
+                gbTrials = sessionDict['processedSequence'].groupby('trialNumber')
                 fixRowDataDf = gbTrials.get_group(trialsInGroup['trialNumber'].values[0])
-                #print(trialsInGroup['trialNumber'][1:])
                 for x in trialsInGroup['trialNumber'][1:]:
                     fixRowDataDf = pd.concat([fixRowDataDf,gbTrials.get_group(x)])
+                
                 meanGazeAz = np.nanmean(fixRowDataDf['gaze2Spherical']['az'])  # sigma_a
                 meanGazeEl = np.nanmean(fixRowDataDf['gaze2Spherical']['el'])  # sigma_e
-                err_prec = np.sum(np.sqrt(np.square(fixRowDataDf['gaze2Spherical']['az'] - meanGazeAz) + np.square(fixRowDataDf['gaze2Spherical']['el'] - meanGazeEl))) / len(fixRowDataDf['gaze2Spherical']['az'])
-                analysis_precision_errors.append(err_prec)
-                
-                eccentricity = np.round(np.sqrt(tX**2 + tY**2))
-                if eccentricity in eccentricitiesPrecDict:
-                    eccentricitiesPrecDict[eccentricity].append(err_prec)
-                else:
-                    eccentricitiesPrecDict[eccentricity] = [err_prec]
-
-        for eccentricity in eccentricities:
-            #gbEccentricity = sessionDict['processedCalib'].groupby('eccentricity')
-            #eccentricity_trials = gbEccentricity.get_group(eccentricity)
-            #gbTLS = eccentricity_trials.groupby([('targetLocalSpherical', 'az'), ('targetLocalSpherical', 'el')])
-            #for name, group in gbTLS:
-            #    meanGazeAz = np.nanmean(group['gaze2Spherical']['az'])
-            #    meanGazeEl = np.nanmean(group['gaze2Spherical']['el'])
-            #    err_prec = np.sum(np.sqrt(np.square(group['gaze2Spherical']['az'] - meanGazeAz) + np.square(group['gaze2Spherical']['el'] - meanGazeEl))) / len(group['gaze2Spherical']['az'])
-            #    if not eccentricity in eccentricitiesPrecDict:
-            #        eccentricitiesPrecDict[eccentricity] = [err_prec]
-            #    else:
-            #        eccentricitiesPrecDict[eccentricity].append(err_prec)
-            eccentricitiesPrecDict[eccentricity] = eccentricitiesPrecDict[eccentricity]
-        # ------------------------------
-
-        if subject not in results_by_subject:
-            results_by_subject[subject] = {sessionDict['plExportFolder']: {'calibration_precision': np.array(calibration_precision_errors), 'analysis_precision': np.array(analysis_precision_errors), 'calibration': np.array([]), 'analysis': np.array([])}}
-        elif sessionDict['plExportFolder'] not in results_by_subject[subject]:
-            results_by_subject[subject][sessionDict['plExportFolder']] = {'calibration_precision': np.array(calibration_precision_errors), 'analysis_precision': np.array(analysis_precision_errors),  'calibration': np.array([]), 'analysis': np.array([])}
-        else:
-            results_by_subject[subject][sessionDict['plExportFolder']]['calibration_precision'] = np.append(results_by_subject[subject][sessionDict['plExportFolder']]['calibration_precision'], calibration_precision_errors)
-            results_by_subject[subject][sessionDict['plExportFolder']]['analysis_precision'] = np.append(results_by_subject[subject][sessionDict['plExportFolder']]['calibration_precision'], analysis_precision_errors)
-        if subject not in results_by_subject:
-            results_by_subject[subject] = {sessionDict['plExportFolder']: {'calibration_precision': np.array(calibration_precision_errors), 'analysis_precision': np.array(analysis_precision_errors), 'calibration': np.array(calibrationEuclideanFixErrors), 'analysis': np.array(analysisEuclideanFixErrors)}}
-        elif sessionDict['plExportFolder'] not in results_by_subject[subject]:
-            results_by_subject[subject][sessionDict['plExportFolder']] = {'calibration_precision': np.array(calibration_precision_errors), 'analysis_precision': np.array(analysis_precision_errors), 'calibration': np.array(calibrationEuclideanFixErrors), 'analysis': np.array(analysisEuclideanFixErrors)}
-        else:
-            results_by_subject[subject][sessionDict['plExportFolder']]['calibration_precision'] = np.append(results_by_subject[subject][sessionDict['plExportFolder']]['calibration_precision'], calibration_precision_errors)
-            results_by_subject[subject][sessionDict['plExportFolder']]['analysis_precision'] = np.append(results_by_subject[subject][sessionDict['plExportFolder']]['analysis_precision'], analysis_precision_errors)
-            results_by_subject[subject][sessionDict['plExportFolder']]['calibration'] = np.append(results_by_subject[subject][sessionDict['plExportFolder']]['calibration'], calibrationEuclideanFixErrors)
-            results_by_subject[subject][sessionDict['plExportFolder']]['analysis'] = np.append(results_by_subject[subject][sessionDict['plExportFolder']]['analysis'], analysisEuclideanFixErrors)
-        
-        if resolution not in results_by_resolution:
-            results_by_resolution[resolution] = {subject: {sessionDict['plExportFolder']: {'calibration_precision': np.array(calibration_precision_errors), 'analysis_precision': np.array(analysis_precision_errors), 'calibration': np.array(calibrationEuclideanFixErrors), 'analysis': np.array(analysisEuclideanFixErrors)}}}
-        elif subject not in results_by_resolution[resolution]:
-            results_by_resolution[resolution][subject] = {sessionDict['plExportFolder']: {'calibration_precision': np.array(calibration_precision_errors), 'analysis_precision': np.array(analysis_precision_errors), 'calibration': np.array(calibrationEuclideanFixErrors), 'analysis': np.array(analysisEuclideanFixErrors)}}
-        elif sessionDict['plExportFolder'] not in results_by_resolution[resolution][subject]:
-            results_by_resolution[resolution][subject][sessionDict['plExportFolder']] = {'calibration_precision': np.array(calibration_precision_errors), 'analysis_precision': np.array(analysis_precision_errors), 'calibration': np.array(calibrationEuclideanFixErrors), 'analysis': np.array(analysisEuclideanFixErrors)}
-        else:
-            results_by_resolution[resolution][subject][sessionDict['plExportFolder']]['calibration_precision'] = np.append(results_by_resolution[resolution][subject][sessionDict['plExportFolder']]['calibration_precision'], calibration_precision_errors)
-            results_by_resolution[resolution][subject][sessionDict['plExportFolder']]['analysis_precision'] = np.append(results_by_resolution[resolution][subject][sessionDict['plExportFolder']]['analysis_precision'], np.array(analysis_precision_errors))
-            results_by_resolution[resolution][subject][sessionDict['plExportFolder']]['calibration'] = np.append(results_by_resolution[resolution][subject][sessionDict['plExportFolder']]['calibration'], calibrationEuclideanFixErrors)
-            results_by_resolution[resolution][subject][sessionDict['plExportFolder']]['analysis'] = np.append(results_by_resolution[resolution][subject][sessionDict['plExportFolder']]['analysis'], analysisEuclideanFixErrors)
-        
-        for eccentricity in eccentricities:
-            if eccentricity not in results_by_eccentricity:
-                results_by_eccentricity[eccentricity] = {resolution: {subject: {sessionDict['plExportFolder']: {'calibration_precision': None, 'analysis_precision': np.array(eccentricitiesPrecDict[eccentricity]), 'calibration': None, 'analysis': np.array(eccentricitiesAccDict[eccentricity])}}}}
-            elif resolution not in results_by_eccentricity[eccentricity]:
-                results_by_eccentricity[eccentricity][resolution] = {subject: {sessionDict['plExportFolder']: {'calibration_precision': None, 'analysis_precision': np.array(eccentricitiesPrecDict[eccentricity]), 'calibration': None, 'analysis': np.array(eccentricitiesAccDict[eccentricity])}}}
-            elif subject not in results_by_eccentricity[eccentricity][resolution]:
-                results_by_eccentricity[eccentricity][resolution][subject] = {sessionDict['plExportFolder']: {'calibration_precision': None, 'analysis_precision': np.array(eccentricitiesPrecDict[eccentricity]), 'calibration': None, 'analysis': np.array(eccentricitiesAccDict[eccentricity])}}
-            elif sessionDict['plExportFolder'] not in results_by_eccentricity[eccentricity][resolution][subject]:
-                results_by_eccentricity[eccentricity][resolution][subject][sessionDict['plExportFolder']] = {'calibration_precision': None, 'analysis_precision': np.array(eccentricitiesPrecDict[eccentricity]), 'calibration': None, 'analysis': np.array(eccentricitiesAccDict[eccentricity])}
-            else:
-                results_by_eccentricity[eccentricity][resolution][subject][sessionDict['plExportFolder']]['analysis'] = np.append(results_by_eccentricity[eccentricity][resolution][subject][sessionDict['plExportFolder']]['analysis'], eccentricitiesAccDict[eccentricity])
-                results_by_eccentricity[eccentricity][resolution][subject][sessionDict['plExportFolder']]['calibration'] = None
-                results_by_eccentricity[eccentricity][resolution][subject][sessionDict['plExportFolder']]['analysis_precision'] = np.append(results_by_eccentricity[eccentricity][resolution][subject][sessionDict['plExportFolder']]['analysis_precision'], eccentricitiesPrecDict[eccentricity])
-                results_by_eccentricity[eccentricity][resolution][subject][sessionDict['plExportFolder']]['calibration_precision'] = None
-        #print('Calibration Euclidean Fixation Errors')
-        #print('min:    ',np.min(calibrationEuclideanFixErrors))
-        #print('mean:   ',np.mean(calibrationEuclideanFixErrors))
-        #print('max:    ',np.max(calibrationEuclideanFixErrors))
-        #print()
-        #print('Analysis Euclidean Fixation Errors')
-        #print('min:    ',np.min(analysisEuclideanFixErrors))
-        #print('mean:   ',np.mean(analysisEuclideanFixErrors))
-        #print('max:    ',np.max(analysisEuclideanFixErrors))
-        #print(sessionDict)
-
-    vanilla_mean_calib_acc = []
-    vanilla_mean_calib_prec = []
-    ellseg_mean_calib_acc = []
-    ellseg_mean_calib_prec = []
-    
-    vanilla_mean_analysis_acc = []
-    vanilla_mean_analysis_prec = []
-    ellseg_mean_analysis_acc = []
-    ellseg_mean_analysis_prec = []
-
-    vanpoints = np.array([])
-    otherpoints = {}
-    
-    prec_vanpoints = np.array([])
-    prec_otherpoints = {}
-
-    for subject in results_by_subject.keys():#range(1, len(results_by_subject)+1):
-        results = {}
-        for plugin in results_by_subject[subject]:
-            calibrationEuclideanFixErrors = results_by_subject[subject][plugin]['calibration']
-            calibrationPrecisionFixErrors = results_by_subject[subject][plugin]['calibration_precision']
-            analysisEuclideanFixErrors = results_by_subject[subject][plugin]['analysis']
-            analysisPrecisionFixErrors = results_by_subject[subject][plugin]['analysis_precision']
-            results[plugin] = {
-                "calibrationEuclideanFixErrors": calibrationEuclideanFixErrors,
-                "calibrationPrecisionFixErrors": calibrationPrecisionFixErrors,
-                "analysisEuclideanFixErrors": analysisEuclideanFixErrors,
-                "analysisPrecisionFixErrors": analysisPrecisionFixErrors,
-                "calibration min": np.nanmin(calibrationEuclideanFixErrors),
-                "calibration mean": np.nanmean(calibrationEuclideanFixErrors),
-                "calibration max": np.nanmax(calibrationEuclideanFixErrors),
-                "calibration precision min": np.nanmin(calibrationPrecisionFixErrors),
-                "calibration precision mean": np.nanmean(calibrationPrecisionFixErrors),
-                "calibration precision max": np.nanmax(calibrationPrecisionFixErrors),
-                "analysis min": np.nanmin(analysisEuclideanFixErrors),
-                "analysis mean": np.nanmean(analysisEuclideanFixErrors),
-                "analysis max": np.nanmax(analysisEuclideanFixErrors),
-                "analysis precision min": np.nanmin(analysisPrecisionFixErrors),
-                "analysis precision mean": np.nanmean(analysisPrecisionFixErrors),
-                "analysis precision max": np.nanmax(analysisPrecisionFixErrors),
-            }
-
-        if True:
-            vanpoints = np.concatenate((vanpoints, np.array(results['vanilla']['analysisEuclideanFixErrors'])))
-            for method in results.keys():
-                if method != "vanilla":
-                    if method not in otherpoints:
-                        otherpoints[method] = [np.array(results['vanilla']['analysisEuclideanFixErrors']), np.array(results[method]['analysisEuclideanFixErrors'])]
-                    else:
-                        otherpoints[method][0] = np.concatenate((otherpoints[method][0], np.array(results['vanilla']['analysisEuclideanFixErrors'])))
-                        otherpoints[method][1] = np.concatenate((otherpoints[method][1], np.array(results[method]['analysisEuclideanFixErrors'])))
+                err_prec = np.mean(
+                    np.sqrt(
+                        np.square(fixRowDataDf['gaze2Spherical']['az'] - meanGazeAz) +\
+                        np.square(fixRowDataDf['gaze2Spherical']['el'] - meanGazeEl)
+                    )
+                )
+                calibration_precision_errors.append(err_prec)
             
-            prec_vanpoints = np.concatenate((prec_vanpoints, np.array(results['vanilla']['analysisPrecisionFixErrors'])))
-            for method in results.keys():
-                if method != "vanilla":
-                    if method not in prec_otherpoints:
-                        prec_otherpoints[method] = [np.array(results['vanilla']['analysisPrecisionFixErrors']), np.array(results[method]['analysisPrecisionFixErrors'])]
-                    else:
-                        prec_otherpoints[method][0] = np.concatenate((prec_otherpoints[method][0], np.array(results['vanilla']['analysisPrecisionFixErrors'])))
-                        prec_otherpoints[method][1] = np.concatenate((prec_otherpoints[method][1], np.array(results[method]['analysisPrecisionFixErrors'])))
-
-        for result in results:
-            #if result != 'vanilla':
-            if result == 'Detector2DESFnetPlugin':#'Detector2DRITnetEllsegV2AllvonePlugin':
-                print(f"SUB {subject} ({result})")
-                print('Calibration Precision Improvement (degrees)')
-                print('min:    ',results['vanilla']["calibration precision min"]-results[result]["calibration precision min"])
-                print('mean:   ',results['vanilla']["calibration precision mean"]-results[result]["calibration precision mean"])
-                print('max:    ',results['vanilla']["calibration precision max"]-results[result]["calibration precision max"])
-                print('Calibration Accuracy Improvement (degrees)')
-                print('min:    ',results['vanilla']["calibration min"]-results[result]["calibration min"])
-                print('mean:   ',results['vanilla']["calibration mean"]-results[result]["calibration mean"])
-                print('max:    ',results['vanilla']["calibration max"]-results[result]["calibration max"])
-                print()
-                #print('Analysis Accuracy Improvement')
-                #print('min:    ',results[result]["analysis min"]-results['vanilla']["analysis min"])
-                #print('mean:   ',results[result]["analysis mean"]-results['vanilla']["analysis mean"])
-                #print('max:    ',results[result]["analysis max"]-results['vanilla']["analysis max"])
-                #print()
-                ellseg_mean_calib_prec.append(results[result]["calibration precision mean"])
-                vanilla_mean_calib_prec.append(results['vanilla']["calibration precision mean"])
-                ellseg_mean_calib_acc.append(results[result]["calibration mean"])
-                vanilla_mean_calib_acc.append(results['vanilla']["calibration mean"])
+            fixDF = sessionDict['fixAssessmentData']
+            gb_h_w = fixDF.groupby([('gridSize', 'heightDegs'), ('gridSize', 'widthDegs')])
+            analysis_precision_errors = []  # wrong position (now right position?)
+            eccentricitiesPrecDict = {}
+            for (gHeight,gWidth) in list(gb_h_w.groups.keys()):
+                targetLoc_targNum_AzEl = gb_h_w.get_group((gHeight,gWidth))['fixTargetSpherical'].drop_duplicates().values
                 
-                vanilla_mean_analysis_acc.append(results['vanilla']["analysis mean"])
-                vanilla_mean_analysis_prec.append(results['vanilla']["analysis precision mean"])
-                ellseg_mean_analysis_acc.append(results[result]["analysis mean"])
-                ellseg_mean_analysis_prec.append(results[result]["analysis precision mean"])
-    
-    if True:
-        MARKERSIZE = 2
-        colors = ['red', 'green', 'purple', 'black']
+                for tNum,(tX,tY) in enumerate(targetLoc_targNum_AzEl):
+                    gbTargetType = sessionDict['trialInfo'].groupby(['targetType'])
+                    fixTrialsDf = gbTargetType.get_group('fixation')
+                    gbFixTrials = fixTrialsDf.groupby([('gridSize', 'heightDegs'), ('gridSize', 'widthDegs')])
+                    fixTrialsDf = gbFixTrials.get_group((gHeight,gWidth))
+                    gbFixTrials = fixTrialsDf.groupby([('fixTargetSpherical','az'),('fixTargetSpherical','el')])
+                    trialsInGroup = gbFixTrials.get_group((tX,tY))
+                    gbTrials = sessionDict['processedCalib'].groupby('trialNumber')
+                    
+                    fixRowDataDFs = []
+                    for x in trialsInGroup['trialNumber']:
+                        grp = gbTrials.get_group(x)
+                        fixRowDataDFs.append((x, grp, np.nanmean(grp['gaze2Spherical']['az']), np.nanmean(grp['gaze2Spherical']['el'])))
+  
+                    # NEW WAY: Pass raw gaze precisions to figure gen
+                    for trialID, DFarr, avgAz, avgEl in fixRowDataDFs:
+                        nparr = np.sqrt(
+                            np.square(DFarr['gaze2Spherical']['az'].to_numpy() - avgAz) +\
+                            np.square(DFarr['gaze2Spherical']['el'].to_numpy() - avgEl)
+                        )
+                        eccentricity = np.round(np.sqrt(tX**2 + tY**2))
+                        if eccentricity in eccentricitiesPrecDict:
+                            eccentricitiesPrecDict[eccentricity].append((trialID, nparr))#(nparr[np.logical_not(np.isnan(nparr))])
+                        else:
+                            eccentricitiesPrecDict[eccentricity] = [(trialID, nparr)]#[nparr[np.logical_not(np.isnan(nparr))]]
+                        analysis_precision_errors.append(np.nanmean(nparr))
+
+            # ------------------------------
+
+            if subject not in results_by_subject:
+                results_by_subject[subject] = {sessionDict['plExportFolder']: {'calibration_precision': np.array(calibration_precision_errors), 'analysis_precision': np.array(analysis_precision_errors), 'calibration': np.array([]), 'analysis': np.array([])}}
+            elif sessionDict['plExportFolder'] not in results_by_subject[subject]:
+                results_by_subject[subject][sessionDict['plExportFolder']] = {'calibration_precision': np.array(calibration_precision_errors), 'analysis_precision': np.array(analysis_precision_errors),  'calibration': np.array([]), 'analysis': np.array([])}
+            else:
+                results_by_subject[subject][sessionDict['plExportFolder']]['calibration_precision'] = np.append(results_by_subject[subject][sessionDict['plExportFolder']]['calibration_precision'], calibration_precision_errors)
+                results_by_subject[subject][sessionDict['plExportFolder']]['analysis_precision'] = np.append(results_by_subject[subject][sessionDict['plExportFolder']]['analysis_precision'], analysis_precision_errors)
+            if subject not in results_by_subject:                                                                                                                           #^^^ WRONG? (Only using results by eccentricity anyways)
+                results_by_subject[subject] = {sessionDict['plExportFolder']: {'calibration_precision': np.array(calibration_precision_errors), 'analysis_precision': np.array(analysis_precision_errors), 'calibration': np.array(calibrationEuclideanFixErrors), 'analysis': np.array(analysisEuclideanFixErrors)}}
+            elif sessionDict['plExportFolder'] not in results_by_subject[subject]:
+                results_by_subject[subject][sessionDict['plExportFolder']] = {'calibration_precision': np.array(calibration_precision_errors), 'analysis_precision': np.array(analysis_precision_errors), 'calibration': np.array(calibrationEuclideanFixErrors), 'analysis': np.array(analysisEuclideanFixErrors)}
+            else:
+                results_by_subject[subject][sessionDict['plExportFolder']]['calibration_precision'] = np.append(results_by_subject[subject][sessionDict['plExportFolder']]['calibration_precision'], calibration_precision_errors)
+                results_by_subject[subject][sessionDict['plExportFolder']]['analysis_precision'] = np.append(results_by_subject[subject][sessionDict['plExportFolder']]['analysis_precision'], analysis_precision_errors)
+                results_by_subject[subject][sessionDict['plExportFolder']]['calibration'] = np.append(results_by_subject[subject][sessionDict['plExportFolder']]['calibration'], calibrationEuclideanFixErrors)
+                results_by_subject[subject][sessionDict['plExportFolder']]['analysis'] = np.append(results_by_subject[subject][sessionDict['plExportFolder']]['analysis'], analysisEuclideanFixErrors)
+            
+            if resolution not in results_by_resolution:
+                results_by_resolution[resolution] = {subject: {sessionDict['plExportFolder']: {'calibration_precision': np.array(calibration_precision_errors), 'analysis_precision': np.array(analysis_precision_errors), 'calibration': np.array(calibrationEuclideanFixErrors), 'analysis': np.array(analysisEuclideanFixErrors)}}}
+            elif subject not in results_by_resolution[resolution]:
+                results_by_resolution[resolution][subject] = {sessionDict['plExportFolder']: {'calibration_precision': np.array(calibration_precision_errors), 'analysis_precision': np.array(analysis_precision_errors), 'calibration': np.array(calibrationEuclideanFixErrors), 'analysis': np.array(analysisEuclideanFixErrors)}}
+            elif sessionDict['plExportFolder'] not in results_by_resolution[resolution][subject]:
+                results_by_resolution[resolution][subject][sessionDict['plExportFolder']] = {'calibration_precision': np.array(calibration_precision_errors), 'analysis_precision': np.array(analysis_precision_errors), 'calibration': np.array(calibrationEuclideanFixErrors), 'analysis': np.array(analysisEuclideanFixErrors)}
+            else:
+                results_by_resolution[resolution][subject][sessionDict['plExportFolder']]['calibration_precision'] = np.append(results_by_resolution[resolution][subject][sessionDict['plExportFolder']]['calibration_precision'], calibration_precision_errors)
+                results_by_resolution[resolution][subject][sessionDict['plExportFolder']]['analysis_precision'] = np.append(results_by_resolution[resolution][subject][sessionDict['plExportFolder']]['analysis_precision'], np.array(analysis_precision_errors))
+                results_by_resolution[resolution][subject][sessionDict['plExportFolder']]['calibration'] = np.append(results_by_resolution[resolution][subject][sessionDict['plExportFolder']]['calibration'], calibrationEuclideanFixErrors)
+                results_by_resolution[resolution][subject][sessionDict['plExportFolder']]['analysis'] = np.append(results_by_resolution[resolution][subject][sessionDict['plExportFolder']]['analysis'], analysisEuclideanFixErrors)
+            
+            def fix_np_len_bug(np_array):
+                return np.array([
+                    np.append(np_array[j], [
+                        np.nan for _ in range(
+                            [
+                                np.max([
+                                    len(np_array[g]) for g in range(len(np_array))
+                                ]) - len(np_array[q]) for q in range(len(np_array))
+                            ][j]
+                        )
+                    ]) for j in range(len(np_array))
+                ])
+
+            for eccentricity in eccentricities:
+                if eccentricity not in results_by_eccentricity:
+                    results_by_eccentricity[eccentricity] = {resolution: {subject: {sessionDict['plExportFolder']: {'calibration_precision': None, 'analysis_precision': np.array([(i, d) for i, d in eccentricitiesPrecDict[eccentricity]], dtype=object), 'calibration': None, 'analysis': np.array([(i, d) for i, d in eccentricitiesAccDict[eccentricity]], dtype=object), 'eye0_rate': len(sessionDict['rawCalibGaze']['gaze_normal0_y']), 'eye1_rate': len(sessionDict['rawCalibGaze']['gaze_normal1_y'])}}}}
+                elif resolution not in results_by_eccentricity[eccentricity]:
+                    results_by_eccentricity[eccentricity][resolution] = {subject: {sessionDict['plExportFolder']: {'calibration_precision': None, 'analysis_precision': np.array([(i, d) for i, d in eccentricitiesPrecDict[eccentricity]], dtype=object), 'calibration': None, 'analysis': np.array([(i, d) for i, d in eccentricitiesAccDict[eccentricity]], dtype=object), 'eye0_rate': len(sessionDict['rawCalibGaze']['gaze_normal0_y']), 'eye1_rate': len(sessionDict['rawCalibGaze']['gaze_normal1_y'])}}}
+                elif subject not in results_by_eccentricity[eccentricity][resolution]:
+                    results_by_eccentricity[eccentricity][resolution][subject] = {sessionDict['plExportFolder']: {'calibration_precision': None, 'analysis_precision': np.array([(i, d) for i, d in eccentricitiesPrecDict[eccentricity]], dtype=object), 'calibration': None, 'analysis': np.array([(i, d) for i, d in eccentricitiesAccDict[eccentricity]], dtype=object), 'eye0_rate': len(sessionDict['rawCalibGaze']['gaze_normal0_y']), 'eye1_rate': len(sessionDict['rawCalibGaze']['gaze_normal1_y'])}}
+                elif sessionDict['plExportFolder'] not in results_by_eccentricity[eccentricity][resolution][subject]:
+                    results_by_eccentricity[eccentricity][resolution][subject][sessionDict['plExportFolder']] = {'calibration_precision': None, 'analysis_precision': np.array([(i, d) for i, d in eccentricitiesPrecDict[eccentricity]], dtype=object), 'calibration': None, 'analysis': np.array([(i, d) for i, d in eccentricitiesAccDict[eccentricity]], dtype=object), 'eye0_rate': len(sessionDict['rawCalibGaze']['gaze_normal0_y']), 'eye1_rate': len(sessionDict['rawCalibGaze']['gaze_normal1_y'])}
+                else:
+                    results_by_eccentricity[eccentricity][resolution][subject][sessionDict['plExportFolder']]['analysis'] = np.append(results_by_eccentricity[eccentricity][resolution][subject][sessionDict['plExportFolder']]['analysis'], np.array([(i, d) for i, d in eccentricitiesAccDict[eccentricity]], dtype=object), axis=0)
+                    results_by_eccentricity[eccentricity][resolution][subject][sessionDict['plExportFolder']]['calibration'] = None
+                    results_by_eccentricity[eccentricity][resolution][subject][sessionDict['plExportFolder']]['analysis_precision'] = np.append(results_by_eccentricity[eccentricity][resolution][subject][sessionDict['plExportFolder']]['analysis_precision'], np.array([(i, d) for i, d in eccentricitiesPrecDict[eccentricity]], dtype=object), axis=0)
+                    results_by_eccentricity[eccentricity][resolution][subject][sessionDict['plExportFolder']]['calibration_precision'] = None
+                    results_by_eccentricity[eccentricity][resolution][subject][sessionDict['plExportFolder']]['eye0_rate'] = len(sessionDict['rawCalibGaze']['gaze_normal0_y'])
+                    results_by_eccentricity[eccentricity][resolution][subject][sessionDict['plExportFolder']]['eye1_rate'] = len(sessionDict['rawCalibGaze']['gaze_normal1_y'])
+
+        pd_acc_constructor = []
+        pd_prec_constructor = []
+        for eccentricity in results_by_eccentricity.keys():
+            for res in results_by_eccentricity[eccentricity]:
+                for sub in results_by_eccentricity[eccentricity][res]:
+                    for plugin in results_by_eccentricity[eccentricity][res][sub]:
+                        for idx, (trialID, datapoint) in enumerate(results_by_eccentricity[eccentricity][res][sub][plugin]['analysis']):
+                            pd_acc_constructor.append({
+                                "subject": sub,
+                                "resolution": res,
+                                "plugin": plugin,
+                                "eccentricity": eccentricity,
+                                "index": idx,
+                                "trial-id": trialID,
+                                "eye0-rate": results_by_eccentricity[eccentricity][res][sub][plugin]['eye0_rate'],
+                                "eye1-rate": results_by_eccentricity[eccentricity][res][sub][plugin]['eye1_rate'],
+                                "accuracy-error": datapoint
+                            })
+                        for idx, (trialID, datapoint) in enumerate(results_by_eccentricity[eccentricity][res][sub][plugin]['analysis_precision']):
+                            pd_prec_constructor.append({
+                                "subject": sub,
+                                "resolution": res,
+                                "plugin": plugin,
+                                "eccentricity": eccentricity,
+                                "index": idx,
+                                "trial-id": trialID,
+                                "eye0-rate": results_by_eccentricity[eccentricity][res][sub][plugin]['eye0_rate'],
+                                "eye1-rate": results_by_eccentricity[eccentricity][res][sub][plugin]['eye1_rate'],
+                                "precision-error": datapoint
+                            })
+        pd_analysis_acc = pd.DataFrame.from_records(
+            pd_acc_constructor
+        )
+                        
+        pd_analysis_prec = pd.DataFrame.from_records(
+            pd_prec_constructor
+        )
+        np.set_printoptions(threshold=sys.maxsize)
+        pd_analysis_acc.to_csv('analysis_accuracy_pd.csv')
+        pd_analysis_prec.to_csv('analysis_precision_pd.csv')
+    else:
+        def converter(instr):
+            return np.fromstring(instr[1:-1], sep=' ').astype(np.float32)
+        pd_analysis_acc = pd.read_csv('analysis_accuracy_pd.csv', converters={'accuracy-error': converter})
+        pd_analysis_prec = pd.read_csv('analysis_precision_pd.csv', converters={'precision-error': converter})
+
+    ANOVA = False
+    if ANOVA:
+        import pingouin
+        pd_analysis_acc = pd_analysis_acc.rename(columns={"accuracy-error": "accuracyError"})
+        pd_analysis_prec = pd_analysis_prec.rename(columns={"precision-error": "precisionError"})
+        print("performing anova...")
+        print("---------------------ACCURACY---------------------")
+        #result = pingouin.anova(data=pd_analysis_acc, dv='accuracyError', between=['subject', 'resolution', 'eccentricity', 'plugin'])
+        result = pingouin.rm_anova(data=pd_analysis_acc, dv='accuracyError', within=['eccentricity', 'plugin'], subject='subject')
+        print(result)
+        print()
+        print("---------------------PRECISION---------------------")
+        #result = pingouin.anova(data=pd_analysis_prec, dv='precisionError', between=['subject', 'resolution', 'eccentricity', 'plugin'])
+        result = pingouin.rm_anova(data=pd_analysis_prec, dv='precisionError', within=['eccentricity', 'plugin'], subject='subject')
+        print(result)
+        exit()
+
+    COLORS = ['red', 'purple', 'pink', 'orange',  'gold', 'black']
+    nn_names = [
+        'Detector2DRITnetEllsegV2AllvonePlugin',
+        'Detector2DRITnetEllsegV2AllvoneEmbeddedPlugin',
+        'Detector2DRITnetEllsegV2AllvoneEmbeddedIrisPlugin',
+        'Detector2DESFnetPlugin', 'Detector2DESFnetEmbeddedPlugin',
+        'Detector2DRITnetPupilPlugin',
+    ]
+    xlabel_dict = {
+            'vanilla': 'Native',
+            'Native': 'Native',
+            'Detector2DRITnetEllsegV2AllvonePlugin': 'EllSegGen',
+            'Detector2DRITnetEllsegV2AllvoneEmbeddedPlugin': 'EllSegGen\n(Direct Pupil)',
+            'Detector2DRITnetEllsegV2AllvoneEmbeddedIrisPlugin': 'EllSegGen\n(Direct Iris)',
+            'Detector2DESFnetPlugin': 'ESFnet',
+            'Detector2DESFnetEmbeddedPlugin': 'ESFnet\n(Direct Pupil)',
+            'Detector2DRITnetPupilPlugin': 'RITnet Pupil',
+        }
+    barlabel_dict = {
+        'vanilla': 'Native',
+        'Native': 'Native',
+        'Detector2DRITnetEllsegV2AllvonePlugin': 'EllSegGen',
+        'Detector2DRITnetEllsegV2AllvoneEmbeddedPlugin': 'EllSegGen (Direct Pupil)',
+        'Detector2DRITnetEllsegV2AllvoneEmbeddedIrisPlugin': 'EllSegGen (Direct Iris)',
+        'Detector2DESFnetPlugin': 'ESFnet',
+        'Detector2DESFnetEmbeddedPlugin': 'ESFnet (Direct Pupil)',
+        'Detector2DRITnetPupilPlugin': 'RITnet Pupil',
         
+    }
+    nn_names_ecc = nn_names
+
+    def flatten_np(nparray):
+        return np.array([item for sublist in nparray for item in sublist])
+
+    def mean_subarrays(nparray):
+        return np.array([np.nanmean(sublist) for sublist in nparray])
+
+    def mean_confidence_interval(data, confidence=0.95):
+        a = 1.0 * np.array(data[~np.isnan(data)])
+        n = len(a)
+        m, se = np.mean(a), scipy.stats.sem(a)
+        h = se * scipy.stats.t.ppf((1 + confidence) / 2., n-1)
+        return m-h, m, m+h
+
+    if True:
+        DROPOUT = 10
+        ELIMINATE_DROPOUTS = True
+        MARKERSIZE = 2
+        colors = COLORS
+        SUBJECTS = (1,2,3,5,6,7,8,9,10,11)#(1,)
+        
+        P = flatten_np(pd_analysis_acc['accuracy-error'].to_numpy())
+        gaussian_thresh = np.nanmean(P) + 2*np.nanstd(P)
+        print("Mean: {}, std: {}, 2*std: {}, mean+2*std: {}".format(
+            np.nanmean(P), np.nanstd(P), 2*np.nanstd(P), np.nanmean(P) + 2*np.nanstd(P)
+        ))
+        
+        print("Data dropped: {:.3f}% dropout, {:.3f} mean, {:.3f} std (data-driven)".format(
+            100*np.count_nonzero(np.where(P >= gaussian_thresh, 1, 0)) / len(P),
+            np.nanmean(P[P < gaussian_thresh]),
+            np.nanstd(P[P < gaussian_thresh])
+        ))
+        print(" "*11+"vs {:.3f}% dropout, {:.3f} mean, {:.3f} std  (hard thresh of {})".format(
+            100*np.count_nonzero(np.where(P >= DROPOUT, 1, 0)) / len(P),
+            np.nanmean(P[P < DROPOUT]),
+            np.nanstd(P[P < DROPOUT]),
+            DROPOUT
+        ))
+        
+        for subj in SUBJECTS:
+            P = flatten_np(pd_analysis_acc.loc[pd_analysis_acc['subject'] == subj]['accuracy-error'])
+            print("(SUBJECT {})".format(subj))
+            print("Data dropped: {:.3f}% dropout, {:.3f} mean, {:.3f} std (data-driven)".format(
+                100*np.count_nonzero(np.where(P >= gaussian_thresh, 1, 0)) / len(P),
+                np.nanmean(P[P < gaussian_thresh]),
+                np.nanstd(P[P < gaussian_thresh])
+            ))
+            print(" "*11+"vs {:.3f}% dropout, {:.3f} mean, {:.3f} std  (hard thresh of {})".format(
+                100*np.count_nonzero(np.where(P >= DROPOUT, 1, 0)) / len(P),
+                np.nanmean(P[P < DROPOUT]),
+                np.nanstd(P[P < DROPOUT]),
+                DROPOUT
+            ))
+        print()
+        print()
+
+        grouped_dropouts = pd_analysis_acc.groupby(['resolution', 'eccentricity', 'plugin'])['accuracy-error'].aggregate(lambda d: [100*np.sum(s >= DROPOUT)/len(s) for s in d])
+        print(grouped_dropouts[192, 0.0, 'Detector2DESFnetPlugin'])
+        grouped_dropouts_by_subject = pd_analysis_acc.groupby(['resolution', 'subject', 'plugin'])['accuracy-error'].aggregate(lambda d: [100*np.sum(s >= DROPOUT)/len(s) for s in d])
+        print(grouped_dropouts_by_subject[192, 1, 'Detector2DESFnetPlugin'])
+
+        np_dropouts_plugins = {}
+        np_dropouts_resolution = {}
+        
+        for plugin in ['vanilla'] + nn_names:
+            P = flatten_np(pd_analysis_acc.loc[pd_analysis_acc['plugin'] == plugin]['accuracy-error'])
+            print("(PLUGIN {})".format(plugin))
+            print(" "*11+"{:.3f}% dropout  (hard thresh of {}deg)".format(
+                100*np.count_nonzero(np.where(P >= DROPOUT, 1, 0)) / len(P),
+                DROPOUT
+            ))
+            np_dropouts_plugins[plugin] = 100*np.count_nonzero(np.where(P >= DROPOUT, 1, 0)) / len(P)
+        print()
+        print()
+        for resolution in (192, 400):
+            print("------(RESOLUTION {})------".format(resolution))
+            temp_top_dropouts = {}
+            for eccentricity in (0.0, 10.0, 15.0, 20.0):
+                print("------(ECCENTRICITY {})------".format(eccentricity))
+                temp_dropouts = {}
+                
+                for plugin in ['vanilla'] + nn_names:
+                    P = flatten_np(pd_analysis_acc.loc[(pd_analysis_acc['eccentricity'] == eccentricity) & (pd_analysis_acc['plugin'] == plugin) & (pd_analysis_acc['resolution'] == resolution)]['accuracy-error'])
+                    print("(PLUGIN {})".format(plugin))
+                    print(" "*11+"{:.3f}% dropout  (hard thresh of {}deg)".format(
+                        100*np.count_nonzero(np.where(P >= DROPOUT, 1, 0)) / len(P),
+                        DROPOUT
+                    ))
+                    temp_dropouts[plugin] = 100*np.count_nonzero(np.where(P >= DROPOUT, 1, 0)) / len(P)
+                temp_top_dropouts[eccentricity] = temp_dropouts
+                print()
+            np_dropouts_resolution[resolution] = temp_top_dropouts
+
+        if ELIMINATE_DROPOUTS:
+            def tempfunc(row):
+                row['accuracy-error'] = row['accuracy-error'][row['accuracy-error'] < DROPOUT]
+                return row
+            def tempfunc2(row):
+                row['precision-error'] = row['precision-error'][row['accuracy-error'] < DROPOUT]
+                return row
+
+            pd_analysis_prec = pd_analysis_acc.join(pd_analysis_prec['precision-error'], how='left').apply(tempfunc2, axis=1)
+            pd_analysis_acc = pd_analysis_acc.apply(tempfunc, axis=1)
+
         # ----- Plot All Points' Accuracy Error Over Native Accuracy Error -----
-        plt.plot([0, np.max(vanpoints)], [0, np.max(vanpoints)], '-', label="Native Accuracy Error", c='blue')
+        X = mean_subarrays(pd_analysis_acc.loc[
+                (pd_analysis_acc['plugin'] == 'vanilla')
+            ]['accuracy-error'].to_numpy())
+        #print(X)
+        #print(X.dtype)
+        #print(X.shape)
+        #print(X.reshape(-1))
+        plt.plot([0, np.max(np.nanmean(X))], [0, np.max(np.nanmean(X))], '-', label="Native Accuracy Error", c='blue')
         i = 0
-        for method in otherpoints.keys():
-            plt.plot(otherpoints[method][0], otherpoints[method][1], '+', label=method, c=colors[i], markersize=MARKERSIZE)
+        for method in nn_names:
+            Y = mean_subarrays(pd_analysis_acc.loc[
+                (pd_analysis_acc['plugin'] == method)
+            ]['accuracy-error'].to_numpy())
+            plt.plot(X, Y, '+', label=method, c=colors[i], markersize=MARKERSIZE)
             i += 1
         plt.title("NN-assisted Accuracy Error vs Native Accuracy Error")
         plt.xlabel("Native Accuracy Error")
@@ -561,14 +760,68 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
         plt.legend()
         #plt.xlim(0, 6)
         #plt.ylim(0, 6)
-        plt.savefig('./figOut/VANIL_ACCURACY_COMP.png', bbox_inches='tight')
+        plt.savefig(f'{figout_loc}VANIL_ACCURACY_COMP.png', bbox_inches='tight')
+        plt.clf()
+        
+        # Specify Resolution 192
+        X = mean_subarrays(pd_analysis_acc.loc[
+                (pd_analysis_acc['plugin'] == 'vanilla') &\
+                (pd_analysis_acc['resolution'] == 192)
+            ]['accuracy-error'].to_numpy())
+        
+        plt.plot([0, np.max(X)], [0, np.max(X)], '-', label="Native Accuracy Error", c='blue')
+        i = 0
+        for method in nn_names:
+            Y = mean_subarrays(pd_analysis_acc.loc[
+                (pd_analysis_acc['plugin'] == method) &\
+                (pd_analysis_acc['resolution'] == 192)
+            ]['accuracy-error'].to_numpy())
+            plt.plot(X, Y, '+', label=method, c=colors[i], markersize=MARKERSIZE)
+            i += 1
+        plt.title("NN-assisted Accuracy Error vs Native Accuracy Error (192x192)")
+        plt.xlabel("Native Accuracy Error")
+        plt.ylabel("NN-assisted Accuracy Error")
+        plt.legend()
+        #plt.xlim(0, 6)
+        #plt.ylim(0, 6)
+        plt.savefig(f'{figout_loc}VANIL_ACCURACY_192_COMP.png', bbox_inches='tight')
+        plt.clf()
+        
+        # Specify Resolution 400
+        X = mean_subarrays(pd_analysis_acc.loc[
+                (pd_analysis_acc['plugin'] == 'vanilla') &\
+                (pd_analysis_acc['resolution'] == 400)
+            ]['accuracy-error'].to_numpy())
+        
+        plt.plot([0, np.max(X)], [0, np.max(X)], '-', label="Native Accuracy Error", c='blue')
+        i = 0
+        for method in nn_names:
+            Y = mean_subarrays(pd_analysis_acc.loc[
+                (pd_analysis_acc['plugin'] == method) &\
+                (pd_analysis_acc['resolution'] == 400)
+            ]['accuracy-error'].to_numpy())
+            plt.plot(X, Y, '+', label=method, c=colors[i], markersize=MARKERSIZE)
+            i += 1
+        plt.title("NN-assisted Accuracy Error vs Native Accuracy Error (400x400)")
+        plt.xlabel("Native Accuracy Error")
+        plt.ylabel("NN-assisted Accuracy Error")
+        plt.legend()
+        #plt.xlim(0, 6)
+        #plt.ylim(0, 6)
+        plt.savefig(f'{figout_loc}VANIL_ACCURACY_400_COMP.png', bbox_inches='tight')
         plt.clf()
 
         # ----- Plot All Points' Precision Error Over Native Precision Error -----
-        plt.plot([0, np.max(prec_vanpoints)], [0, np.max(prec_vanpoints)], '-', label="Native Precision Error", c='blue')
+        X = mean_subarrays(pd_analysis_prec.loc[
+                (pd_analysis_prec['plugin'] == 'vanilla')
+            ]['precision-error'].to_numpy())
+        plt.plot([0, np.max(X)], [0, np.max(X)], '-', label="Native Precision Error", c='blue')
         i = 0
-        for method in prec_otherpoints.keys():
-            plt.plot(prec_otherpoints[method][0], prec_otherpoints[method][1], '+', label=method, c=colors[i], markersize=MARKERSIZE)
+        for method in nn_names:
+            Y = mean_subarrays(pd_analysis_prec.loc[
+                (pd_analysis_prec['plugin'] == method)
+            ]['precision-error'].to_numpy())
+            plt.plot(X, Y, '+', label=method, c=colors[i], markersize=MARKERSIZE)
             i += 1
         plt.title("NN-assisted Precision Error vs Native Precision Error")
         plt.xlabel("Native Precision Error")
@@ -576,162 +829,1292 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
         plt.legend()
         #plt.xlim(0, 6)
         #plt.ylim(0, 6)
-        plt.savefig('./figOut/VANIL_PRECISION_COMP.png', bbox_inches='tight')
+        plt.savefig(f'{figout_loc}VANIL_PRECISION_COMP.png', bbox_inches='tight')
+        plt.clf()
+        
+        # Specify Resolution 192
+        X = mean_subarrays(pd_analysis_prec.loc[
+                (pd_analysis_prec['plugin'] == 'vanilla') &\
+                (pd_analysis_prec['resolution'] == 192)
+            ]['precision-error'].to_numpy())
+        plt.plot([0, np.max(X)], [0, np.max(X)], '-', label="Native Precision Error", c='blue')
+        i = 0
+        for method in nn_names:
+            Y = mean_subarrays(pd_analysis_prec.loc[
+                (pd_analysis_prec['plugin'] == method) &\
+                (pd_analysis_prec['resolution'] == 192)
+            ]['precision-error'].to_numpy())
+            plt.plot(X, Y, '+', label=method, c=colors[i], markersize=MARKERSIZE)
+            i += 1
+        plt.title("NN-assisted Precision Error vs Native Precision Error (192x192)")
+        plt.xlabel("Native Precision Error")
+        plt.ylabel("NN-assisted Precision Error")
+        plt.legend()
+        #plt.xlim(0, 6)
+        #plt.ylim(0, 6)
+        plt.savefig(f'{figout_loc}VANIL_PRECISION_192_COMP.png', bbox_inches='tight')
+        plt.clf()
+        
+        # Specify Resolution 400
+        X = mean_subarrays(pd_analysis_prec.loc[
+                (pd_analysis_prec['plugin'] == 'vanilla') &\
+                (pd_analysis_prec['resolution'] == 400)
+            ]['precision-error'].to_numpy())
+        plt.plot([0, np.max(X)], [0, np.max(X)], '-', label="Native Precision Error", c='blue')
+        i = 0
+        for method in nn_names:
+            Y = mean_subarrays(pd_analysis_prec.loc[
+                (pd_analysis_prec['plugin'] == method) &\
+                (pd_analysis_prec['resolution'] == 400)
+            ]['precision-error'].to_numpy())
+            plt.plot(X, Y, '+', label=method, c=colors[i], markersize=MARKERSIZE)
+            i += 1
+        plt.title("NN-assisted Precision Error vs Native Precision Error (400x400)")
+        plt.xlabel("Native Precision Error")
+        plt.ylabel("NN-assisted Precision Error")
+        plt.legend()
+        #plt.xlim(0, 6)
+        #plt.ylim(0, 6)
+        plt.savefig(f'{figout_loc}VANIL_PRECISION_400_COMP.png', bbox_inches='tight')
         plt.clf()
         
         # ----- Plot All Points' Binned&Averaged Accuracy Error Over Native Binned&Averaged Accuracy Error -----
         from decimal import Decimal
-        bins = {}
-        expand_bin_size_at = 12.0
-        colors = ['red', 'green', 'purple', 'black']
-        plt.plot([0, np.max(vanpoints)], [0, np.max(vanpoints)], '-', label="Native Accuracy Error", c='blue')
-        i = 0
-        for method in otherpoints.keys():
-            bins[method] = []
-            vanillas = otherpoints[method][0]
-            percentile50 = np.percentile(vanillas, 50)
-            percentile90 = np.percentile(vanillas, 90)
-            percentile95 = np.percentile(vanillas, 95)
-            max_vanillas = round(np.max(vanillas), 1)  # nearest tenth place
-            bin_group_1_size = 0.25
-            bin_group_3_size = 3.0
-            bg1s_decimal = Decimal(str(bin_group_1_size))
-            bg3s_decimal = Decimal(str(bin_group_3_size))
-            curr = 0.0
-            while curr <= max_vanillas:
+        for resolution in (None, 192, 400):
+            bins = {}
+            #expand_bin_size_at = 12.0
+            colors = COLORS
+            if resolution is None:
+                X = mean_subarrays(pd_analysis_acc.loc[
+                    (pd_analysis_acc['plugin'] == 'vanilla')
+                ]['accuracy-error'].to_numpy())
+            else:
+                X = mean_subarrays(pd_analysis_acc.loc[
+                    (pd_analysis_acc['plugin'] == 'vanilla') &\
+                    (pd_analysis_acc['resolution'] == resolution)
+                ]['accuracy-error'].to_numpy())
+            plt.plot([0, np.max(X)], [0, np.max(X)], '-', label="Native Accuracy Error", c='blue')
+            i = 0
+            for method in nn_names:
+                bins[method] = []
+                if resolution is None:
+                    X = mean_subarrays(pd_analysis_acc.loc[
+                        (pd_analysis_acc['plugin'] == 'vanilla')
+                    ]['accuracy-error'].to_numpy())
+                    Y = mean_subarrays(pd_analysis_acc.loc[
+                        (pd_analysis_acc['plugin'] == method)
+                    ]['accuracy-error'].to_numpy())
+                else:
+                    X = mean_subarrays(pd_analysis_acc.loc[
+                        (pd_analysis_acc['plugin'] == 'vanilla') &\
+                        (pd_analysis_acc['resolution'] == resolution)
+                    ]['accuracy-error'].to_numpy())
+                    Y = mean_subarrays(pd_analysis_acc.loc[
+                        (pd_analysis_acc['plugin'] == method) &\
+                        (pd_analysis_acc['resolution'] == resolution)
+                    ]['accuracy-error'].to_numpy())
+                vanillas = X
+
+                percentile50 = np.nanpercentile(vanillas, 50)
+                percentile90 = np.nanpercentile(vanillas, 90)
+                percentile95 = np.nanpercentile(vanillas, 95)
+
+                expand_bin_size_at = percentile90
+                max_vanillas = round(np.nanmax(vanillas), 1)  # nearest tenth place
+                bin_group_1_size = 0.25
+                bin_group_3_size = 3.0
+                bg1s_decimal = Decimal(str(bin_group_1_size))
+                bg3s_decimal = Decimal(str(bin_group_3_size))
+                curr = 0.0
+                while curr <= max_vanillas:
+                    bins[method].append([])
+                    if curr < expand_bin_size_at:
+                        curr += bin_group_1_size
+                    else:
+                        curr += bin_group_3_size
                 bins[method].append([])
-                if curr < expand_bin_size_at:
-                    curr += bin_group_1_size
-                else:
-                    curr += bin_group_3_size
-            bins[method].append([])
-            for pt_idx in range(len(otherpoints[method][0])):
-                pt = otherpoints[method][0][pt_idx]
-                if pt < expand_bin_size_at + (bin_group_1_size / 2):
-                    if (pt % bin_group_1_size) < (bin_group_1_size / 2):
-                        modfix = float(Decimal(pt) % bg1s_decimal)
-                        idx = pt - modfix
+
+                for pt_idx in range(len(X)):
+                    pt = X[pt_idx]
+                    if pt < expand_bin_size_at + (bin_group_1_size / 2):
+                        if (pt % bin_group_1_size) < (bin_group_1_size / 2):
+                            modfix = float(Decimal(pt.item()) % bg1s_decimal)
+                            idx = pt - modfix
+                        else:
+                            modfix = float(Decimal(pt.item()) % bg1s_decimal)
+                            idx = pt + (bin_group_1_size - modfix)
+                        idx = idx / bin_group_1_size
+                        bins[method][int(round(idx))].append(Y[pt_idx])
                     else:
-                        modfix = float(Decimal(pt) % bg1s_decimal)
-                        idx = pt + (bin_group_1_size - modfix)
-                    idx = idx / bin_group_1_size
-                    bins[method][int(round(idx))].append(otherpoints[method][1][pt_idx])
-                else:
-                    if (pt % bin_group_3_size) < (bin_group_3_size / 2):
-                        modfix = float(Decimal(pt) % bg3s_decimal)
-                        idx = pt - modfix
-                    else:
-                        modfix = float(Decimal(pt) % bg3s_decimal)
-                        idx = pt + (bin_group_3_size - modfix)
-                    #idx = round(idx)
-                    idx = (expand_bin_size_at / bin_group_1_size) + ((idx - expand_bin_size_at) / bin_group_3_size)
-                    print(pt_idx, "/", len(otherpoints[method][1]))
-                    print(int(round(idx)), "/", len(bins[method]))
-                    bins[method][int(round(idx))].append(otherpoints[method][1][pt_idx])
-            X = []
-            Y = []
-            for idx in range(len(bins[method])):
-                if len(bins[method][idx]):
-                    if idx <= (expand_bin_size_at / bin_group_1_size):
-                        bin = bin_group_1_size * idx
-                    else:
-                        bin = expand_bin_size_at + bin_group_3_size * (idx - (expand_bin_size_at / bin_group_1_size))
-                    X.append(bin)
-                    Y.append(np.mean(bins[method][idx]))
-            plt.plot(X, Y, '-o', markersize=5, label=method, c=colors[i])
-            i += 1
-        
-        plt.title("NN-assisted Binned Mean Accuracy Error vs Native Accuracy Error")
-        plt.xlabel("Native Accuracy Error")
-        plt.ylabel("NN-assisted Accuracy Error (bin interval = {} -> {})".format(bin_group_1_size, bin_group_3_size))
-        #plt.xlim(0, 12)
-        #plt.ylim(0, 12)
-        plt.axvline(percentile50, linestyle=":", color="blue", label="50th percentile")
-        plt.axvline(percentile90, linestyle=":", color="green", label="90th percentile")
-        plt.axvline(percentile95, linestyle=":", color="red", label="95th percentile")
-        plt.legend()
-        plt.savefig('./figOut/VANIL_ACC_BINNED_COMP.png', bbox_inches='tight')
-        plt.xlim(0, percentile90)
-        plt.ylim(0, 22)
-        plt.savefig('./figOut/VANIL_ACC_BINNED_LIM_PERCENTILE90_COMP.png', bbox_inches='tight')
+                        if (pt % bin_group_3_size) < (bin_group_3_size / 2):
+                            modfix = float(Decimal(pt.item()) % bg3s_decimal)
+                            idx = pt - modfix
+                        else:
+                            modfix = float(Decimal(pt.item()) % bg3s_decimal)
+                            idx = pt + (bin_group_3_size - modfix)
+                        #idx = round(idx)
+                        idx = (expand_bin_size_at / bin_group_1_size) + ((idx - expand_bin_size_at) / bin_group_3_size)
+                        if not np.isnan(idx):
+                            bins[method][int(round(idx))].append(Y[pt_idx])
+                X = []
+                Y = []
+                for idx in range(len(bins[method])):
+                    if len(bins[method][idx]):
+                        if idx <= (expand_bin_size_at / bin_group_1_size):
+                            bin = bin_group_1_size * idx
+                        else:
+                            bin = expand_bin_size_at + bin_group_3_size * (idx - (expand_bin_size_at / bin_group_1_size))
+                        #X.append(bin)
+                        #Y.append(np.mean(bins[method][idx]))
+                        for currpt in bins[method][idx]:
+                            X.append(bin)
+                            Y.append(currpt)
+                #plt.plot(X, Y, '-o', markersize=5, label=method, c=colors[i])
+                sns.lineplot(x=X, y=Y, markers=True, label=method, color=colors[i], marker='o')
+                #plt.plot(X, Y, '-o', markersize=5, label=method, c=colors[i])
+                i += 1
+            
+            plt.xlabel("Native Accuracy Error (degrees) (bin interval = {} -> {})".format(bin_group_1_size, bin_group_3_size))
+            plt.ylabel("NN-assisted Accuracy Error (degrees)")
+            #plt.xlim(0, 12)
+            #plt.ylim(0, 12)
+            plt.axvline(percentile50, linestyle=":", color="blue", label="50th percentile")
+            plt.axvline(percentile90, linestyle=":", color="green", label="90th percentile")
+            plt.axvline(percentile95, linestyle=":", color="red", label="95th percentile")
+            plt.legend()
+            #plt.xlim(0, percentile90)
+            #plt.ylim(0, 22)
+            if resolution is None:
+                plt.title("NN-assisted Binned Mean Accuracy Error vs Native Accuracy Error")
+                plt.savefig(f'{figout_loc}VANIL_ACC_BINNED_COMP.png', bbox_inches='tight')
+                plt.xlim(0, percentile90)
+                plt.ylim(0, 22)
+                plt.savefig(f'{figout_loc}VANIL_ACC_BINNED_LIM_PERCENTILE90_COMP.png', bbox_inches='tight')
+                plt.clf()
+            else:
+                plt.title("NN-assisted Binned Mean Accuracy Error vs Native Accuracy Error ({}x{})".format(resolution, resolution))
+                plt.ylim(0, 70 if resolution == 192 else 100)
+                plt.savefig(f'{figout_loc}VANIL_ACC_BINNED_{resolution}_COMP.png', bbox_inches='tight')
+                plt.xlim(0, percentile90)
+                plt.ylim(0, 22)
+                plt.savefig(f'{figout_loc}VANIL_ACC_BINNED_LIM_PERCENTILE90_{resolution}_COMP.png', bbox_inches='tight')
+                plt.clf()
+
+        # ---------- Compare distribution of accuracy errors across subjects ----------
+        print("-----All Data (Accuracy)-----")
+        f, axs = plt.subplots(5, 2, sharex=True, sharey=True, figsize=(5,6))
+        for subjnum in SUBJECTS:
+            subjidx = subjnum - 1
+            if subjidx > 2:
+                subjidx -= 1
+            GGG = flatten_np(pd_analysis_acc.loc[pd_analysis_acc['subject'] == subjnum]['accuracy-error'].to_numpy())
+            print("(Subject {}) Mean: {}, std: {}".format(subjnum, np.nanmean(GGG), np.nanstd(GGG)))
+            ax = axs[subjidx % 5][int(subjidx / 5)]
+            ax.hist(GGG, 200)
+            ax.set_title(f"Subject {subjnum}", fontsize='small')
+            ax.set_xlim([0, 50])
+            ax.axvline(x=DROPOUT, color='red', lw=0.5)
+        f.suptitle("Accuracy Error Distribution Across Subjects")
+        f.tight_layout()
+        f.savefig(f'{figout_loc}HIST_ACC_ALL.png', dpi=600)
         plt.clf()
+        plt.close()
+
+        # ---------- SUMMARY DATA FOR RESOLUTIONS 192 AND 400 ----------
+        fig192, axes192 = plt.subplots(1, 3, figsize=(16, 4))
+        ax192_1, ax192_2, ax192_3 = axes192
+        fig400, axes400 = plt.subplots(1, 3, figsize=(16, 4))
+        ax400_1, ax400_2, ax400_3 = axes400
+        for resolution in (192, 400):
+            print("-----Resolution {} (Accuracy)-----".format(resolution))
+            eccentricity_accs = {}
+            acc_bins = {}
+            
+            for eccentricity in (0.0, 10.0, 15.0, 20.0):
+                X = mean_subarrays(pd_analysis_acc.loc[
+                    (pd_analysis_acc['plugin'] == 'vanilla') &\
+                    (pd_analysis_acc['eccentricity'] == eccentricity) &\
+                    (pd_analysis_acc['resolution'] == resolution)
+                ]['accuracy-error'].to_numpy())
+                if 'Native' not in eccentricity_accs:
+                    eccentricity_accs['Native'] = X
+                    acc_bins['Native'] = [eccentricity for i in range(len(X))]
+                else:
+                    eccentricity_accs['Native'] = np.concatenate((eccentricity_accs['Native'], X))
+                    acc_bins['Native'] = np.concatenate((acc_bins['Native'], [eccentricity for i in range(len(X))]))
+                for method in nn_names_ecc:
+                    Y = mean_subarrays(pd_analysis_acc.loc[
+                        (pd_analysis_acc['plugin'] == method) &\
+                        (pd_analysis_acc['eccentricity'] == eccentricity) &\
+                        (pd_analysis_acc['resolution'] == resolution)
+                    ]['accuracy-error'].to_numpy())
+                    if method not in eccentricity_accs:
+                        eccentricity_accs[method] = Y
+                        acc_bins[method] = [eccentricity for i in range(len(Y))]
+                    else:
+                        eccentricity_accs[method] = np.concatenate((eccentricity_accs[method], Y))
+                        acc_bins[method] = np.concatenate((acc_bins[method], [eccentricity for i in range(len(Y))]))
+
+            print("-----Resolution {} (Precision)-----".format(resolution))
+            eccentricity_precs = {}
+            prec_bins = {}
+            for eccentricity in (0.0, 10.0, 15.0, 20.0):
+                X = mean_subarrays(pd_analysis_prec.loc[
+                        (pd_analysis_prec['plugin'] == 'vanilla') &\
+                        (pd_analysis_prec['eccentricity'] == eccentricity) &\
+                        (pd_analysis_prec['resolution'] == resolution)
+                    ]['precision-error'].to_numpy())
+                if 'Native' not in eccentricity_precs:
+                    eccentricity_precs['Native'] = X
+                    prec_bins['Native'] = [eccentricity for i in range(len(X))]
+                else:
+                    eccentricity_precs['Native'] = np.concatenate((eccentricity_precs['Native'], X))
+                    prec_bins['Native'] = np.concatenate((prec_bins['Native'], [eccentricity for i in range(len(X))]))
+                for method in nn_names_ecc:
+                    Y = mean_subarrays(pd_analysis_prec.loc[
+                        (pd_analysis_prec['plugin'] == method) &\
+                        (pd_analysis_prec['eccentricity'] == eccentricity) &\
+                        (pd_analysis_prec['resolution'] == resolution)
+                    ]['precision-error'].to_numpy())
+                    if method not in eccentricity_precs:
+                        eccentricity_precs[method] = Y
+                        prec_bins[method] = [eccentricity for i in range(len(Y))]
+                    else:
+                        eccentricity_precs[method] = np.concatenate((eccentricity_precs[method], Y))
+                        prec_bins[method] = np.concatenate((prec_bins[method], [eccentricity for i in range(len(Y))]))
+
+            FONT_SIZE = 15
+
+            # ----- ROBUSTNESS -----
+
+            i = 0
+            if resolution == 192:
+                ax = ax192_1
+            else:
+                ax = ax400_1
+            for method in eccentricity_accs:
+                newmeth = method
+                if newmeth == 'Native':
+                    newmeth = 'vanilla'
+                
+                X = []
+                Y = []
+                
+                for eccentricity in (0.0, 10.0, 15.0, 20.0):
+                    Y = np.concatenate((Y, grouped_dropouts[resolution, eccentricity, newmeth]))
+                    X = np.concatenate((X, [eccentricity for _ in range(len(grouped_dropouts[resolution, eccentricity, newmeth]))])) 
+                label = xlabel_dict[method]
+                sns.lineplot(x=X, y=Y, ax=ax, markers=True, label=label, color=colors[i-1] if i > 0 else 'blue', marker='o')
+                i += 1
+
+            ax.set_title("Robustness Error Across Eccentricities ({}x{})".format(resolution, resolution))
+            ax.set_xlabel("Eccentricity")
+            ax.set_ylabel("Dropout Rate (percentage)")
+            ax.set_xticks((0.0, 10.0, 15.0, 20.0))
+            #plt.xlim(0, 12)
+            #plt.ylim(0, 19 if resolution == 192 else 12.5)
+            if resolution == 192:
+                ax.set_ylim(0, 23)
+            else:
+                ax.set_ylim(0, 23)
+            ax.legend()
+            for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+                        ax.get_xticklabels() + ax.get_yticklabels() + ax.get_legend().get_texts()):
+                item.set_fontsize(FONT_SIZE)
+
+            # ----- ACCURACY -----
+            i = 0
+            if resolution == 192:
+                ax = ax192_2
+            else:
+                ax = ax400_2
+            for method in eccentricity_accs:
+                print("(accuracy) method:{}{}, dropout: {:.2f}%, mean (with 95% CIs): {}, std: {:.2f}".format(' '*(28-len(barlabel_dict[method])), barlabel_dict[method],
+                    100*np.count_nonzero(np.isnan(eccentricity_accs[method]) | np.where(eccentricity_accs[method] >= DROPOUT, 1, 0)) / len(eccentricity_accs[method]),
+                    mean_confidence_interval(eccentricity_accs[method]), np.nanstd(eccentricity_accs[method])))
+                newmeth = method
+                if newmeth == 'Native':
+                    newmeth = 'vanilla'
+                
+                label = xlabel_dict[method]
+                sns.lineplot(x=acc_bins[method], y=eccentricity_accs[method], ax=ax, markers=True, label=label, color=colors[i-1] if i > 0 else 'blue', marker='o')
+                i += 1
+
+            ax.set_title("Accuracy Error Across Eccentricities ({}x{})".format(resolution, resolution))
+            ax.set_xlabel("Eccentricity")
+            ax.set_ylabel("Accuracy Error (degrees)")
+            ax.set_xticks((0.0, 10.0, 15.0, 20.0))
+            #plt.xlim(0, 12)
+            #plt.ylim(0, 19 if resolution == 192 else 12.5)
+            if resolution == 192:
+                ax.set_ylim(0, 6)
+            else:
+                ax.set_ylim(0, 6)
+            ax.legend().remove()
+            for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+                        ax.get_xticklabels() + ax.get_yticklabels()):
+                item.set_fontsize(FONT_SIZE)
+
+            # ----- PRECISION -----
+            i = 0
+            if resolution == 192:
+                ax = ax192_3
+            else:
+                ax = ax400_3
+            for method in eccentricity_precs:
+                print("(precision) method:{}{}, mean (with 95% CIs): {}, std: {:.2f}".format(' '*(28-len(barlabel_dict[method])), barlabel_dict[method],
+                    mean_confidence_interval(eccentricity_precs[method]), np.nanstd(eccentricity_precs[method])))
+                newmeth = method
+                if newmeth == 'Native':
+                    newmeth = 'vanilla'
+                
+                label = xlabel_dict[method]
+                sns.lineplot(x=acc_bins[method], y=eccentricity_precs[method], ax=ax, markers=True, label=label, color=colors[i-1] if i > 0 else 'blue', marker='o')
+                i += 1
+            ax.set_title("Precision Error Across Eccentricities ({}x{})".format(resolution, resolution))
+            ax.set_xlabel("Eccentricity")
+            ax.set_ylabel("Precision Error (degrees)")
+            ax.set_xticks((0.0, 10.0, 15.0, 20.0))
+            #plt.xlim(0, 12)
+            #plt.ylim(0, 19 if resolution == 192 else 12.5)
+            if resolution == 192:
+                ax.set_ylim(0, 6)
+            else:
+                ax.set_ylim(0, 6)
+            ax.legend().remove()
+            for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+                        ax.get_xticklabels() + ax.get_yticklabels()):
+                item.set_fontsize(FONT_SIZE)
+
+        fig192.tight_layout()
+        fig192.savefig(f'{figout_loc}ecc_separated_192.png', bbox_inches='tight')
+        fig192.clf()
+        fig400.tight_layout()
+        fig400.savefig(f'{figout_loc}ecc_separated_400.png', bbox_inches='tight')
+        fig400.clf()
+        plt.clf()
+        #fig.legend
+
+        # ---------- Eccentricity-separated accuracy comparison ----------
+        for resolution in (None, 192, 400):
+            print("-----Resolution {} (Accuracy)-----".format(resolution))
+            eccentricity_accs = {}
+            acc_bins = {}
+            for eccentricity in (0.0, 10.0, 15.0, 20.0):
+                if resolution is None:
+                    X = flatten_np(pd_analysis_acc.loc[
+                        (pd_analysis_acc['plugin'] == 'vanilla') &\
+                        (pd_analysis_acc['eccentricity'] == eccentricity)
+                    ]['accuracy-error'].to_numpy())
+                else:
+                    X = flatten_np(pd_analysis_acc.loc[
+                        (pd_analysis_acc['plugin'] == 'vanilla') &\
+                        (pd_analysis_acc['eccentricity'] == eccentricity) &\
+                        (pd_analysis_acc['resolution'] == resolution)
+                    ]['accuracy-error'].to_numpy())
+                if 'Native' not in eccentricity_accs:
+                    eccentricity_accs['Native'] = X
+                    acc_bins['Native'] = [eccentricity for i in range(len(X))]
+                else:
+                    eccentricity_accs['Native'] = np.concatenate((eccentricity_accs['Native'], X))
+                    acc_bins['Native'] = np.concatenate((acc_bins['Native'], [eccentricity for i in range(len(X))]))
+                for method in nn_names_ecc:
+                    if resolution is None:
+                        Y = flatten_np(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == method) &\
+                            (pd_analysis_acc['eccentricity'] == eccentricity)
+                        ]['accuracy-error'].to_numpy())
+                    else:
+                        Y = flatten_np(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == method) &\
+                            (pd_analysis_acc['eccentricity'] == eccentricity) &\
+                            (pd_analysis_acc['resolution'] == resolution)
+                        ]['accuracy-error'].to_numpy())
+                    if method not in eccentricity_accs:
+                        eccentricity_accs[method] = Y
+                        acc_bins[method] = [eccentricity for i in range(len(Y))]
+                    else:
+                        eccentricity_accs[method] = np.concatenate((eccentricity_accs[method], Y))
+                        acc_bins[method] = np.concatenate((acc_bins[method], [eccentricity for i in range(len(Y))]))
+            i = 0
+            for method in eccentricity_accs:
+                print("method:{}{}, dropout: {:.2f}%, mean (with 95% CIs): {}, std: {:.2f}".format(' '*(28-len(barlabel_dict[method])), barlabel_dict[method],
+                    100*np.count_nonzero(np.isnan(eccentricity_accs[method]) | np.where(eccentricity_accs[method] >= DROPOUT, 1, 0)) / len(eccentricity_accs[method]),
+                    mean_confidence_interval(eccentricity_accs[method]), np.nanstd(eccentricity_accs[method])))
+                newmeth = method
+                if newmeth == 'Native':
+                    newmeth = 'vanilla'
+                
+                if resolution is None:
+                    label = "({:.1f}%) ".format(np_dropouts_plugins[newmeth]) + xlabel_dict[method]
+                else:
+                    label = xlabel_dict[method]
+                sns.lineplot(x=acc_bins[method], y=eccentricity_accs[method], markers=True, label=label, color=colors[i-1] if i > 0 else 'blue', marker='o')
+                i += 1
+            if resolution is None:
+                plt.title("Accuracy Across Eccentricities (All Resolutions)")
+                plt.xlabel("Eccentricity")
+                plt.ylabel("Accuracy Error (degrees)")
+                #plt.xlim(0, 12)
+                if ELIMINATE_DROPOUTS:
+                    plt.ylim(0, 19)
+                else:
+                    plt.ylim(0, 19)
+                plt.legend()
+                plt.savefig(f'{figout_loc}ecc_separated_acc_comp.png', bbox_inches='tight')
+                plt.clf()
+            else:
+                plt.title("Accuracy Across Eccentricities ({}x{})".format(resolution, resolution))
+                plt.xlabel("Eccentricity")
+                plt.ylabel("Accuracy Error (degrees)")
+                #plt.xlim(0, 12)
+                #plt.ylim(0, 19 if resolution == 192 else 12.5)
+                if ELIMINATE_DROPOUTS:
+                    plt.ylim(0, 19)
+                else:
+                    plt.ylim(0, 19)
+                plt.legend()
+                plt.savefig(f'{figout_loc}ecc_separated_acc_{resolution}_comp.png', bbox_inches='tight')
+                plt.clf()
+
+        # ---------- Eccentricity-separated (and SUBJECT-separated) accuracy comparison ----------
+        for resolution in (192, 400, None):
+            print("-----Resolution {} (Accuracy BY SUBJECT)-----".format(resolution))
+            f, axs = plt.subplots(5, 2, sharex=True)
+            eccentricity_accs_subject = {n:{} for n in SUBJECTS}
+            acc_bins_subject = {n:{} for n in SUBJECTS}
+            for eccentricity in (0.0, 10.0, 15.0, 20.0):
+                for subj in SUBJECTS:
+                    if resolution is None:
+                        X = flatten_np(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'vanilla') &\
+                            (pd_analysis_acc['eccentricity'] == eccentricity) &\
+                            (pd_analysis_acc['subject'] == subj)
+                        ]['accuracy-error'].to_numpy())
+                    else:
+                        X = flatten_np(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'vanilla') &\
+                            (pd_analysis_acc['eccentricity'] == eccentricity) &\
+                            (pd_analysis_acc['resolution'] == resolution) &\
+                            (pd_analysis_acc['subject'] == subj)
+                        ]['accuracy-error'].to_numpy())
+                    if 'Native' not in eccentricity_accs_subject[subj]:
+                        eccentricity_accs_subject[subj]['Native'] = X
+                        acc_bins_subject[subj]['Native'] = [eccentricity for i in range(len(X))]
+                    else:
+                        eccentricity_accs_subject[subj]['Native'] = np.concatenate((eccentricity_accs_subject[subj]['Native'], X))
+                        acc_bins_subject[subj]['Native'] = np.concatenate((acc_bins_subject[subj]['Native'], [eccentricity for i in range(len(X))]))
+                    for method in nn_names_ecc:
+                        if resolution is None:
+                            Y = flatten_np(pd_analysis_acc.loc[
+                                (pd_analysis_acc['plugin'] == method) &\
+                                (pd_analysis_acc['eccentricity'] == eccentricity) &\
+                                (pd_analysis_acc['subject'] == subj)
+                            ]['accuracy-error'].to_numpy())
+                        else:
+                            Y = flatten_np(pd_analysis_acc.loc[
+                                (pd_analysis_acc['plugin'] == method) &\
+                                (pd_analysis_acc['eccentricity'] == eccentricity) &\
+                                (pd_analysis_acc['resolution'] == resolution) &\
+                                (pd_analysis_acc['subject'] == subj)
+                            ]['accuracy-error'].to_numpy())
+                        if method not in eccentricity_accs_subject[subj]:
+                            eccentricity_accs_subject[subj][method] = Y
+                            acc_bins_subject[subj][method] = [eccentricity for i in range(len(Y))]
+                        else:
+                            eccentricity_accs_subject[subj][method] = np.concatenate((eccentricity_accs_subject[subj][method], Y))
+                            acc_bins_subject[subj][method] = np.concatenate((acc_bins_subject[subj][method], [eccentricity for i in range(len(Y))]))
+            for subj in SUBJECTS:
+                print("SUBJECT {}".format(subj))
+                subjidx = subj - 1
+                if subjidx > 2:
+                    subjidx -= 1
+                i = 0
+                for method in eccentricity_accs_subject[subj]:
+                    print("method:{}{}, dropout: {:.2f}%, mean (with 95% CIs): {}, std: {:.2f}".format(' '*(28-len(barlabel_dict[method])), barlabel_dict[method],
+                        100*np.count_nonzero(np.isnan(eccentricity_accs_subject[subj][method]) | np.where(eccentricity_accs_subject[subj][method] >= DROPOUT, 1, 0)) / len(eccentricity_accs_subject[subj][method]),
+                        mean_confidence_interval(eccentricity_accs_subject[subj][method]), np.nanstd(eccentricity_accs_subject[subj][method])))
+                    sns.lineplot(x=acc_bins_subject[subj][method], y=eccentricity_accs_subject[subj][method], markers=True, label=xlabel_dict[method], color=colors[i-1] if i > 0 else 'blue', marker='o', ax=axs[subjidx % 5][int(subjidx / 5)])
+                    i += 1
+            if resolution is None:
+                f.suptitle("Accuracy Across Eccentricities (All Resolutions)")
+                #f.xlabel("Eccentricity")
+                #f.ylabel("Accuracy Error (degrees)")
+                #plt.xlim(0, 12)
+                #plt.ylim(0, 12)
+                #axs[0][0].legend()
+                for ii in range(5):
+                    for jj in range(2):
+                        if ii != 0 or jj != 0:
+                            axs[ii][jj].set_title((ii + jj*5)+1 if (ii + jj*5)+1 < 4 else (ii + jj*5)+2, fontsize='small')
+                            axs[ii][jj].get_legend().remove()
+                f.savefig(f'{figout_loc}ecc_separated_subj_acc_comp.png', bbox_inches='tight')
+                plt.clf()
+            else:
+                f.suptitle("Accuracy Across Eccentricities ({}x{})".format(resolution, resolution))
+                #f.supxlabel("Eccentricity")
+                #f.supylabel("Accuracy Error (degrees)")
+                #plt.xlim(0, 12)
+                #plt.ylim(0, 19 if resolution == 192 else 12.5)
+                #axs[0][0].legend()
+                for ii in range(5):
+                    for jj in range(2):
+                        if ii != 0 or jj != 0:
+                            axs[ii][jj].set_title((ii + jj*5)+1 if (ii + jj*5)+1 < 4 else (ii + jj*5)+2, fontsize='small')
+                            axs[ii][jj].get_legend().remove()
+                f.savefig(f'{figout_loc}ecc_separated_subj_acc_{resolution}_comp.png', bbox_inches='tight')
+                plt.clf()
+
+        # ---------- Eccentricity-separated accuracy comparison (subtracted by native) ----------
+        for resolution in (None, 192, 400):
+            print("-----Resolution {} (Accuracy Averaged & Sub-native)-----".format(resolution))
+            eccentricity_accs = {}
+            acc_bins = {}
+            for eccentricity in (0.0, 10.0, 15.0, 20.0):
+                if resolution is None:
+                    X = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'vanilla') &\
+                            (pd_analysis_acc['eccentricity'] == eccentricity)
+                        ]['accuracy-error'].to_numpy())
+                else:
+                    X = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'vanilla') &\
+                            (pd_analysis_acc['eccentricity'] == eccentricity) &\
+                            (pd_analysis_acc['resolution'] == resolution)
+                        ]['accuracy-error'].to_numpy())
+                if 'Native' not in eccentricity_accs:
+                    eccentricity_accs['Native'] = np.array(X) - np.array(X)
+                    acc_bins['Native'] = [eccentricity for i in range(len(X))]
+                else:
+                    eccentricity_accs['Native'] = np.concatenate((eccentricity_accs['Native'],
+                        np.array(X) - np.array(X)))
+                    acc_bins['Native'] = np.concatenate((acc_bins['Native'], [eccentricity for i in range(len(X))]))
+                for method in nn_names_ecc:
+                    if resolution is None:
+                        Y = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == method) &\
+                            (pd_analysis_acc['eccentricity'] == eccentricity)
+                        ]['accuracy-error'].to_numpy())
+                    else:
+                        Y = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == method) &\
+                            (pd_analysis_acc['eccentricity'] == eccentricity) &\
+                            (pd_analysis_acc['resolution'] == resolution)
+                        ]['accuracy-error'].to_numpy())
+                    if method not in eccentricity_accs:
+                        eccentricity_accs[method] = np.array(Y) - np.array(X)
+                        acc_bins[method] = [eccentricity for i in range(len(Y))]
+                    else:
+                        eccentricity_accs[method] = np.concatenate(
+                            (eccentricity_accs[method],
+                            np.array(Y) - np.array(X))
+                        )
+                        acc_bins[method] = np.concatenate((acc_bins[method], [eccentricity for i in range(len(Y))]))
+            i = 0
+            for method in eccentricity_accs:
+                sns.lineplot(x=acc_bins[method], y=eccentricity_accs[method], markers=True, label=xlabel_dict[method], color=colors[i-1] if i > 0 else 'blue', marker='o')
+                i += 1
+            if resolution is None:
+                plt.title("Accuracy (Comp. to Native) Across Eccentricities")
+                plt.xlabel("Eccentricity")
+                plt.ylabel("Accuracy Error Relative to Native (degrees)")
+                #plt.xlim(0, 12)
+                #plt.ylim(0, 12)
+                plt.legend()
+                plt.savefig(f'{figout_loc}ecc_separated_acc_subnative_comp.png', bbox_inches='tight')
+                plt.clf()
+            else:
+                plt.title("Accuracy (Comp. to Native) Across Eccentricities ({}x{})".format(resolution, resolution))
+                plt.xlabel("Eccentricity")
+                plt.ylabel("Accuracy Error Relative to Native (degrees)")
+                #plt.xlim(0, 12)
+                plt.ylim(-7.5 if resolution == 192 else -8, 14 if resolution == 192 else 2)
+                plt.legend()
+                plt.savefig(f'{figout_loc}ecc_separated_acc_subnative_{resolution}_comp.png', bbox_inches='tight')
+                plt.clf()
         
+        # ---------- Eccentricity-separated precision comparison ----------
+        for resolution in (None, 192, 400):
+            eccentricity_precs = {}
+            prec_bins = {}
+            for eccentricity in (0.0, 10.0, 15.0, 20.0):
+                if resolution is None:
+                    X = flatten_np(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'vanilla') &\
+                            (pd_analysis_prec['eccentricity'] == eccentricity)
+                        ]['precision-error'].to_numpy())
+                else:
+                    X = flatten_np(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'vanilla') &\
+                            (pd_analysis_prec['eccentricity'] == eccentricity) &\
+                            (pd_analysis_prec['resolution'] == resolution)
+                        ]['precision-error'].to_numpy())
+                if 'Native' not in eccentricity_precs:
+                    eccentricity_precs['Native'] = X
+                    prec_bins['Native'] = [eccentricity for i in range(len(X))]
+                else:
+                    eccentricity_precs['Native'] = np.concatenate((eccentricity_precs['Native'], X))
+                    prec_bins['Native'] = np.concatenate((prec_bins['Native'], [eccentricity for i in range(len(X))]))
+                for method in nn_names_ecc:
+                    if resolution is None:
+                        Y = flatten_np(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == method) &\
+                            (pd_analysis_prec['eccentricity'] == eccentricity)
+                        ]['precision-error'].to_numpy())
+                    else:
+                        Y = flatten_np(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == method) &\
+                            (pd_analysis_prec['eccentricity'] == eccentricity) &\
+                            (pd_analysis_prec['resolution'] == resolution)
+                        ]['precision-error'].to_numpy())
+                    if method not in eccentricity_precs:
+                        eccentricity_precs[method] = Y
+                        prec_bins[method] = [eccentricity for i in range(len(Y))]
+                    else:
+                        eccentricity_precs[method] = np.concatenate((eccentricity_precs[method], Y))
+                        prec_bins[method] = np.concatenate((prec_bins[method], [eccentricity for i in range(len(Y))]))
+            i = 0
+            for method in eccentricity_precs:
+                newmeth = method
+                if newmeth == 'Native':
+                    newmeth = 'vanilla'
+                
+                if resolution is None:
+                    label = "({:.1f}%) ".format(np_dropouts_plugins[newmeth]) + xlabel_dict[method]
+                else:
+                    label = xlabel_dict[method]
+
+                sns.lineplot(x=prec_bins[method], y=eccentricity_precs[method], markers=True, label=label, color=colors[i-1] if i > 0 else 'blue', marker='o')
+                i += 1
+            if resolution is None:
+                plt.title("Precision Across Eccentricities (All Resolutions)")
+                plt.xlabel("Eccentricity")
+                plt.ylabel("Precision Error (degrees)")
+                #plt.xlim(0, 12)
+                #plt.ylim(0, 12)
+                plt.legend()
+                plt.savefig(f'{figout_loc}ecc_separated_prec_comp.png', bbox_inches='tight')
+                plt.clf()
+            else:
+                plt.title("Precision Across Eccentricities ({}x{})".format(resolution, resolution))
+                plt.xlabel("Eccentricity")
+                plt.ylabel("Precision Error (degrees)")
+                #plt.xlim(0, 12)
+                plt.ylim(0, 6.5 if resolution == 192 else 8.5)
+                plt.legend()
+                plt.savefig(f'{figout_loc}ecc_separated_prec_{resolution}_comp.png', bbox_inches='tight')
+                plt.clf()
+        
+        # ---------- Eccentricity-separated precision comparison (subtracted by native) ----------
+        for resolution in (None, 192, 400):
+            eccentricity_precs = {}
+            prec_bins = []
+            for eccentricity in (0.0, 10.0, 15.0, 20.0):
+                if resolution is None:
+                    X = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'vanilla') &\
+                            (pd_analysis_prec['eccentricity'] == eccentricity)
+                        ]['precision-error'].to_numpy())
+                else:
+                    X = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'vanilla') &\
+                            (pd_analysis_prec['eccentricity'] == eccentricity) &\
+                            (pd_analysis_prec['resolution'] == resolution)
+                        ]['precision-error'].to_numpy())
+                if 'Native' not in eccentricity_precs:
+                    eccentricity_precs['Native'] = np.array(X) - np.array(X)
+                    prec_bins = [eccentricity for i in range(len(X))]
+                else:
+                    eccentricity_precs['Native'] = np.concatenate((eccentricity_precs['Native'],
+                        np.array(X) - np.array(X)))
+                    prec_bins = np.concatenate((prec_bins, [eccentricity for i in range(len(X))]))
+                for method in nn_names_ecc:
+                    if resolution is None:
+                        Y = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == method) &\
+                            (pd_analysis_prec['eccentricity'] == eccentricity)
+                        ]['precision-error'].to_numpy())
+                    else:
+                        Y = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == method) &\
+                            (pd_analysis_prec['eccentricity'] == eccentricity) &\
+                            (pd_analysis_prec['resolution'] == resolution)
+                        ]['precision-error'].to_numpy())
+                    if method not in eccentricity_precs:
+                        eccentricity_precs[method] = np.array(Y) - np.array(X)
+                    else:
+                        eccentricity_precs[method] = np.concatenate((eccentricity_precs[method],
+                            np.array(Y) - np.array(X)))
+            i = 0
+            for method in eccentricity_precs:
+                sns.lineplot(x=prec_bins, y=eccentricity_precs[method], markers=True, label=xlabel_dict[method], color=colors[i-1] if i > 0 else 'blue', marker='o')
+                i += 1
+            if resolution is None:
+                plt.title("Precision (Comp. to Native) Across Eccentricities")
+                plt.xlabel("Eccentricity")
+                plt.ylabel("Precision Error Relative to Native (degrees)")
+                #plt.xlim(0, 12)
+                #plt.ylim(0, 12)
+                plt.legend()
+                plt.savefig(f'{figout_loc}ecc_separated_prec_subnative_comp.png', bbox_inches='tight')
+                plt.clf()
+            else:
+                plt.title("Precision (Comp. to Native) Across Eccentricities ({}x{})".format(resolution, resolution))
+                plt.xlabel("Eccentricity")
+                plt.ylabel("Precision Error Relative to Native (degrees)")
+                #plt.xlim(0, 12)
+                plt.ylim(-5 if resolution == 192 else -8, 4 if resolution == 192 else 1.5)
+                plt.legend()
+                plt.savefig(f'{figout_loc}ecc_separated_prec_subnative_{resolution}_comp.png', bbox_inches='tight')
+                plt.clf()
         
         # ----- Plot All Points' Binned&Averaged Precision Error Over Native Binned&Averaged Precision Error -----
         from decimal import Decimal
-        bins = {}
-        expand_bin_size_at = 2.0
-        colors = ['red', 'green', 'purple', 'black']
-        plt.plot([0, np.max(prec_vanpoints)], [0, np.max(prec_vanpoints)], '-', label="Native Precision Error", c='blue')
-        i = 0
-        for method in prec_otherpoints.keys():
-            bins[method] = []
-            vanillas = prec_otherpoints[method][0]
-            percentile50 = np.percentile(vanillas, 50)
-            percentile90 = np.percentile(vanillas, 90)
-            percentile95 = np.percentile(vanillas, 95)
-            max_vanillas = round(np.max(vanillas), 1)  # nearest tenth place
-            bin_group_1_size = 0.1
-            bin_group_3_size = 0.25
-            bg1s_decimal = Decimal(str(bin_group_1_size))
-            bg3s_decimal = Decimal(str(bin_group_3_size))
-            curr = 0.0
-            while curr <= max_vanillas:
+        for resolution in (None, 192, 400):
+            bins = {}
+            #expand_bin_size_at = 2.0
+            colors = COLORS
+            if resolution is None:
+                X = mean_subarrays(pd_analysis_prec.loc[
+                    (pd_analysis_prec['plugin'] == 'vanilla')
+                ]['precision-error'].to_numpy())
+            else:
+                X = mean_subarrays(pd_analysis_prec.loc[
+                    (pd_analysis_prec['plugin'] == 'vanilla') &\
+                    (pd_analysis_prec['resolution'] == resolution)
+                ]['precision-error'].to_numpy())
+            plt.plot([0, np.max(X)], [0, np.max(X)], '-', label="Native Precision Error", c='blue')
+            i = 0
+            for method in nn_names:
+                bins[method] = []
+                if resolution is None:
+                    vanillas = mean_subarrays(pd_analysis_prec.loc[
+                        (pd_analysis_prec['plugin'] == 'vanilla')
+                    ]['precision-error'].to_numpy())
+                else:
+                    vanillas = mean_subarrays(pd_analysis_prec.loc[
+                        (pd_analysis_prec['plugin'] == 'vanilla') &\
+                        (pd_analysis_prec['resolution'] == resolution)
+                    ]['precision-error'].to_numpy())
+                percentile50 = np.nanpercentile(vanillas, 50)
+                percentile90 = np.nanpercentile(vanillas, 90)
+                percentile95 = np.nanpercentile(vanillas, 95)
+                expand_bin_size_at = percentile90
+                max_vanillas = round(np.nanmax(vanillas), 1)  # nearest tenth place
+                bin_group_1_size = 0.1
+                bin_group_3_size = 0.25
+                bg1s_decimal = Decimal(str(bin_group_1_size))
+                bg3s_decimal = Decimal(str(bin_group_3_size))
+                curr = 0.0
+                while curr <= max_vanillas:
+                    bins[method].append([])
+                    if curr < expand_bin_size_at:
+                        curr += bin_group_1_size
+                    else:
+                        curr += bin_group_3_size
                 bins[method].append([])
-                if curr < expand_bin_size_at:
-                    curr += bin_group_1_size
+                if resolution is None:
+                    Y = mean_subarrays(pd_analysis_prec.loc[
+                        (pd_analysis_prec['plugin'] == method)
+                    ]['precision-error'].to_numpy())
                 else:
-                    curr += bin_group_3_size
-            bins[method].append([])
-            for pt_idx in range(len(prec_otherpoints[method][0])):
-                pt = prec_otherpoints[method][0][pt_idx]
-                if pt < expand_bin_size_at + (bin_group_1_size / 2):
-                    if (pt % bin_group_1_size) < (bin_group_1_size / 2):
-                        modfix = float(Decimal(pt) % bg1s_decimal)
-                        idx = pt - modfix
+                    Y = mean_subarrays(pd_analysis_prec.loc[
+                        (pd_analysis_prec['plugin'] == method) &\
+                        (pd_analysis_prec['resolution'] == resolution)
+                    ]['precision-error'].to_numpy())
+                for pt_idx in range(len(vanillas)):
+                    pt = vanillas[pt_idx]
+                    if pt < expand_bin_size_at + (bin_group_1_size / 2):
+                        if (pt % bin_group_1_size) < (bin_group_1_size / 2):
+                            modfix = float(Decimal(pt.item()) % bg1s_decimal)
+                            idx = pt - modfix
+                        else:
+                            modfix = float(Decimal(pt.item()) % bg1s_decimal)
+                            idx = pt + (bin_group_1_size - modfix)
+                        idx = idx / bin_group_1_size
+                        bins[method][int(round(idx))].append(Y[pt_idx])
                     else:
-                        modfix = float(Decimal(pt) % bg1s_decimal)
-                        idx = pt + (bin_group_1_size - modfix)
-                    idx = idx / bin_group_1_size
-                    bins[method][int(round(idx))].append(prec_otherpoints[method][1][pt_idx])
-                else:
-                    modfix = float(Decimal(pt) % bg3s_decimal)
-                    if modfix < (bin_group_3_size / 2):
-                        idx = pt - modfix
-                    else:
-                        idx = pt + (bin_group_3_size - modfix)
-                    #idx = round(idx)
-                    idx = (expand_bin_size_at / bin_group_1_size) + ((idx - expand_bin_size_at) / bin_group_3_size)
-                    print(pt_idx, "/", len(prec_otherpoints[method][1]))
-                    print(int(round(idx)), "/", len(bins[method]))
-                    bins[method][int(round(idx))].append(prec_otherpoints[method][1][pt_idx])
-            X = []
-            Y = []
-            for idx in range(len(bins[method])):
-                if len(bins[method][idx]):
-                    if idx <= (expand_bin_size_at / bin_group_1_size):
-                        bin = bin_group_1_size * idx
-                    else:
-                        bin = expand_bin_size_at + bin_group_3_size * (idx - (expand_bin_size_at / bin_group_1_size))
-                    X.append(bin)
-                    Y.append(np.mean(bins[method][idx]))
-            plt.plot(X, Y, '-o', markersize=5, label=method, c=colors[i])
-            i += 1
+                        modfix = float(Decimal(pt.item()) % bg3s_decimal)
+                        if modfix < (bin_group_3_size / 2):
+                            idx = pt - modfix
+                        else:
+                            idx = pt + (bin_group_3_size - modfix)
+                        #idx = round(idx)
+                        idx = (expand_bin_size_at / bin_group_1_size) + ((idx - expand_bin_size_at) / bin_group_3_size)
+                        if not np.isnan(idx):
+                            bins[method][int(round(idx))].append(Y[pt_idx])
+                currX = []
+                currY = []
+                for idx in range(len(bins[method])):
+                    if len(bins[method][idx]):
+                        if idx <= (expand_bin_size_at / bin_group_1_size):
+                            bin = bin_group_1_size * idx
+                        else:
+                            bin = expand_bin_size_at + bin_group_3_size * (idx - (expand_bin_size_at / bin_group_1_size))
+                        #currX.append(bin)
+                        #currY.append(np.mean(bins[method][idx]))
+                        for currpt in bins[method][idx]:
+                            currX.append(bin)
+                            currY.append(currpt)
+                #plt.plot(X, Y, '-o', markersize=5, label=method, c=colors[i])
+                sns.lineplot(x=currX, y=currY, markers=True, label=method, color=colors[i], marker='o')
+                i += 1
+            
+            if resolution is None:
+                plt.title("NN-assisted Binned Mean Precision Error vs Native Precision Error")
+                plt.xlabel("Native Precision Error (degrees) (bin interval = {} -> {})".format(bin_group_1_size, bin_group_3_size))
+                plt.ylabel("NN-assisted Precision Error (degrees)")
+                #plt.xlim(0, 12)
+                #plt.ylim(0, 12)
+                plt.axvline(percentile50, linestyle=":", color="blue", label="50th percentile")
+                plt.axvline(percentile90, linestyle=":", color="green", label="90th percentile")
+                plt.axvline(percentile95, linestyle=":", color="red", label="95th percentile")
+                plt.legend()
+                #plt.xlim(0, percentile90)
+                #plt.ylim(0, 10)
+                plt.savefig(f'{figout_loc}VANIL_PREC_BINNED_COMP.png', bbox_inches='tight')
+                plt.xlim(0, percentile90)
+                plt.ylim(0, 10)
+                plt.savefig(f'{figout_loc}VANIL_PREC_BINNED_LIM_PERCENTILE90_COMP.png', bbox_inches='tight')
+                plt.clf()
+            else:
+                plt.title("NN-assisted Binned Mean Precision Error vs Native Precision Error ({}x{})".format(resolution, resolution))
+                plt.xlabel("Native Precision Error (degrees) (bin interval = {} -> {})".format(bin_group_1_size, bin_group_3_size))
+                plt.ylabel("NN-assisted Precision Error (degrees)")
+                #plt.xlim(0, 12)
+                #plt.ylim(0, 12)
+                plt.axvline(percentile50, linestyle=":", color="blue", label="50th percentile")
+                plt.axvline(percentile90, linestyle=":", color="green", label="90th percentile")
+                plt.axvline(percentile95, linestyle=":", color="red", label="95th percentile")
+                plt.legend()
+                #plt.xlim(0, percentile90)
+                plt.ylim(0, 75 if resolution == 192 else 70)
+                plt.savefig(f'{figout_loc}VANIL_PREC_BINNED_{resolution}_COMP.png', bbox_inches='tight')
+                plt.xlim(0, percentile90)
+                plt.ylim(0, 10)
+                plt.savefig(f'{figout_loc}VANIL_PREC_BINNED_LIM_PERCENTILE90_{resolution}_COMP.png', bbox_inches='tight')
+                plt.clf()
+
+        # ----- Plot Generalized Accuracy Information For Native And Each NN -----
+        colors = COLORS
+        labels = np.concatenate((["Native"], [xlabel_dict[k] for k in nn_names]))
+        # --------------------------------------------------------------------------------------
         
-        plt.title("NN-assisted Binned Mean Precision Error vs Native Precision Error")
-        plt.xlabel("Native Precision Error")
-        plt.ylabel("NN-assisted Precision Error (bin interval = {} -> {})".format(bin_group_1_size, bin_group_3_size))
-        #plt.xlim(0, 12)
-        #plt.ylim(0, 12)
-        plt.axvline(percentile50, linestyle=":", color="blue", label="50th percentile")
-        plt.axvline(percentile90, linestyle=":", color="green", label="90th percentile")
-        plt.axvline(percentile95, linestyle=":", color="red", label="95th percentile")
-        plt.legend()
-        plt.savefig('./figOut/VANIL_PREC_BINNED_COMP.png', bbox_inches='tight')
-        plt.xlim(0, percentile90)
-        plt.ylim(0, 10)
-        plt.savefig('./figOut/VANIL_PREC_BINNED_LIM_PERCENTILE90_COMP.png', bbox_inches='tight')
-        plt.clf()
+        def generate_summary_boxplot(X, Y, labels, barlabels, xlabels, ylabel, title, filename, ylimit, xlabel, Z, override_plotsize, group_size):
+            from pylab import plot, show, savefig, xlim, figure, \
+                        ylim, legend, boxplot, setp, axes
+            from matplotlib.cbook import boxplot_stats
+            color_list = np.concatenate((['blue'], COLORS))
+            # function for setting the colors of the box plots pairs
+            def setBoxColors(bp, color_count=2):
+                for i in range(color_count):
+                    setp(bp['boxes'][i], color=color_list[i])
+                    #setp(bp['boxes'][1], color='red')
+                    
+                    setp(bp['caps'][i*2], color=color_list[i])
+                    setp(bp['caps'][i*2+1], color=color_list[i])
+                    #setp(bp['caps'][2], color='red')
+                    #setp(bp['caps'][3], color='red')
+                    
+                    setp(bp['whiskers'][i*2], color=color_list[i])
+                    setp(bp['whiskers'][i*2+1], color=color_list[i])
+                    #setp(bp['whiskers'][2], color='red')
+                    #setp(bp['whiskers'][3], color='red')
+                    try:
+                        setp(bp['fliers'][i], color='black')
+                        #setp(bp['fliers'][1], color='black')
+                    except:
+                        pass
+                    setp(bp['medians'][i], color=color_list[i])
+                   # setp(bp['medians'][1], color='red')
+
+            # Some fake data to plot
+            A= [[1, 2, 5,],  [7, 2]]
+            B = [[5, 7, 2, 2, 5], [7, 2, 5]]
+            C = [[3,2,5,7], [6, 7, 3]]
+
+            if override_plotsize:
+                fig = figure(figsize=(20,15))
+            else:
+                fig = figure()
+            ax = axes()
+            #hold(True)
+            
+            
+            num_boxes = 2 + len(Z)
+            Xs = [[] for i in range(num_boxes)]
+            boxplots = []
+            mass_medians = [[] for i in range(num_boxes)]
+            
+            # boxplot pair
+            bpX = X[~np.isnan(X)]
+            bpY = Y[~np.isnan(Y)]
+            bpZ = [z[~np.isnan(z)] for z in Z]
+            bp = ax.boxplot([bpX, bpY, *bpZ], positions = [I for I in range(num_boxes)], widths = 0.6, showfliers=False)
+            boxplots.append(bp)
+            setBoxColors(bp, color_count=num_boxes)
+            
+            mass_medians[0].append(np.median(X[~np.isnan(X)]))
+            mass_medians[1].append(np.median(Y[~np.isnan(Y)]))
+            for zed in range(len(Z)):
+                z = Z[zed]
+                mass_medians[zed+2].append(np.median(z[~np.isnan(z)]))
+            
+            Xs[0].append(0)
+            Xs[1].append(1)
+            for zed in range(len(Z)):
+                Xs[zed+2].append(zed+2)
+            
+            plots = []
+            for i in range(len(mass_medians)):
+                for j in range(len(Xs[0])):
+                    h, = plt.plot([Xs[0][j], Xs[0][j]], [mass_medians[i][j], mass_medians[i][j]], '-', c=color_list[i])
+           
+                #h, = plt.plot(Xs[i], mass_medians[i], '-', c=color_list[i])
+                plots.append(h)
+
+            print(f"len Xs: {len(Xs)}, len X[0]: {len(Xs[0])}, j: {j}, len(mass_medians): {len(mass_medians)}")
+            print(f"group_size: {group_size}")
+            print(f"(len(mass_medians) - 1) - ((len(mass_medians) - 1) % group_size) + group_size - 1: {(len(mass_medians) - 1) - ((len(mass_medians) - 1) % group_size) + group_size - 1}")
+            plt.plot([Xs[0][j], Xs[(len(mass_medians) - 1) - ((len(mass_medians) - 1) % group_size) + group_size - 1][j]], [mass_medians[0][j], mass_medians[0][j]], '--', c=color_list[0], linewidth=1)
+
+            # second boxplot pair
+            #bp = boxplot(B, positions = [4, 5], widths = 0.6)
+            #setBoxColors(bp)
+
+            # thrid boxplot pair
+            #bp = boxplot(C, positions = [7, 8], widths = 0.6)
+            #setBoxColors(bp)
+
+            # set axes limits and labels
+            #xlim(0,9)
+            #ylim(0,9)
+            if ylimit:
+                ylim(0, ylimit)
+            #ax.set_xticks(np.arange(len(labels))*(num_boxes+1) + int(np.floor((num_boxes+1)/2)))
+            ax.set_xticklabels(xlabels)
+            
+            ax.set_ylabel(ylabel)
+            ax.set_xlabel(xlabel)
+            #ax.tick_params(axis='x', which='major', labelsize=10)
+            for tick in ax.xaxis.get_major_ticks():
+                tick.label.set_fontsize(9)
+            #ax.xaxis.set_label_coords(-0.1, -0.1)
+            ax.set_title(title)
+            
+            # draw temporary red and blue lines and use them to create a legend
+            #legend_lines = []
+            #for i in range(len(mass_medians)):
+            #    legend_lines.append(ax.plot([1,1], '-', c=color_list[i]))
+            #hB, = ax.plot([1,1],'b-')
+            #hR, = ax.plot([1,1],'r-')
+            
+            #legend((hB, hR),(barlabels[0], barlabels[1]))
+            #hB.set_visible(False)
+            #hR.set_visible(False)
+            legend(plots, xlabels)
+            #if override_plotsize:
+            #    savefig(filename, bbox_inches='tight')
+            #else:
+            #    savefig(filename)
+            savefig(filename, bbox_inches='tight')
+            plt.clf()
+        # --------------------------------------------------------------------------------------
+        
+        X = flatten_np(pd_analysis_acc.loc[
+            (pd_analysis_acc['plugin'] == 'vanilla')
+        ]['accuracy-error'].to_numpy())
+        Y = flatten_np(pd_analysis_acc.loc[
+            (pd_analysis_acc['plugin'] == nn_names[0])
+        ]['accuracy-error'].to_numpy())
+        labels = np.concatenate((["Native"], [xlabel_dict[k] for k in nn_names]))
+        barlabels = np.concatenate((["Native"], [barlabel_dict[k] for k in nn_names]))
+        #xlabels = ['Native', 'EllSeg', 'ESFnet', 'RITnet Pupil']
+        xlabels = np.concatenate((["Native"], [xlabel_dict[k] for k in nn_names]))
+        ylabel = 'Accuracy Error (degrees)'
+        title = 'Gaze Accuracy Errors Across Neural Networks'
+        filename = f'{figout_loc}Generalized Accuracy TRUE.png'
+        ylimit = None
+        xlabel = 'Method'
+        Z = [flatten_np(pd_analysis_acc.loc[
+                (pd_analysis_acc['plugin'] == k)
+            ]['accuracy-error'].to_numpy()) for k in nn_names[1:]]
+        override_plotsize = False
+        group_size = 2
+        
+        """
+        generate_summary_boxplot(X, Y, labels, barlabels, xlabels, ylabel, title, filename, ylimit, xlabel, Z, override_plotsize, group_size)
+        # ECCENTRICITY PLOT TEST
+        
+        for eccentricity in (0.0, 10.0, 15.0, 20.0):
+            X = flatten_np(pd_analysis_acc.loc[
+                (pd_analysis_acc['plugin'] == 'vanilla') &\
+                (pd_analysis_acc['eccentricity'] == eccentricity)
+            ]['accuracy-error'].to_numpy())
+            Y = flatten_np(pd_analysis_acc.loc[
+                (pd_analysis_acc['plugin'] == nn_names[0]) &\
+                (pd_analysis_acc['eccentricity'] == eccentricity)
+            ]['accuracy-error'].to_numpy())
+            labels = np.concatenate((["Native"], [xlabel_dict[k] for k in nn_names]))
+            barlabels = np.concatenate((["Native"], [barlabel_dict[k] for k in nn_names_ecc]))
+            #xlabels = ['Native', 'EllSeg', 'ESFnet', 'RITnet Pupil']
+            xlabels = np.concatenate((["Native"], [xlabel_dict[k] for k in nn_names_ecc]))
+            ylabel = 'Accuracy Error (degrees)'
+            title = 'Gaze Accuracy Errors Across Neural Networks (Ecc {})'.format(eccentricity)
+            filename = '{}Generalized Accuracy Ecc {} TRUE.png'.format(figout_loc, eccentricity)
+            ylimit = None
+            xlabel = 'Method'
+            Z = [flatten_np(pd_analysis_acc.loc[
+                (pd_analysis_acc['plugin'] == k) &\
+                (pd_analysis_acc['eccentricity'] == eccentricity)
+            ]['accuracy-error'].to_numpy()) for k in nn_names_ecc[1:]]
+            override_plotsize = False
+            group_size = 2
+            
+            generate_summary_boxplot(X, Y, labels, barlabels, xlabels, ylabel, title, filename, ylimit, xlabel, Z, override_plotsize, group_size)
+
+        for eccentricity in (0.0, 10.0, 15.0, 20.0):
+            X = flatten_np(pd_analysis_prec.loc[
+                (pd_analysis_prec['plugin'] == 'vanilla') &\
+                (pd_analysis_prec['eccentricity'] == eccentricity)
+            ]['precision-error'].to_numpy())
+            Y = flatten_np(pd_analysis_prec.loc[
+                (pd_analysis_prec['plugin'] == nn_names_ecc[0]) &\
+                (pd_analysis_prec['eccentricity'] == eccentricity)
+            ]['precision-error'].to_numpy())
+            labels = np.concatenate((["Native"], [xlabel_dict[k] for k in nn_names]))
+            barlabels = np.concatenate((["Native"], [barlabel_dict[k] for k in nn_names_ecc]))
+            #xlabels = ['Native', 'EllSeg', 'ESFnet', 'RITnet Pupil']
+            xlabels = np.concatenate((["Native"], [xlabel_dict[k] for k in nn_names_ecc]))
+            ylabel = 'Precision Error (degrees)'
+            title = 'Gaze Precision Errors Across Neural Networks (Ecc {})'.format(eccentricity)
+            filename = '{}Generalized Precision Ecc {} TRUE.png'.format(figout_loc, eccentricity)
+            ylimit = None
+            xlabel = 'Method'
+            Z = [flatten_np(pd_analysis_prec.loc[
+                (pd_analysis_prec['plugin'] == k) &\
+                (pd_analysis_prec['eccentricity'] == eccentricity)
+            ]['precision-error'].to_numpy()) for k in nn_names_ecc[1:]]
+            override_plotsize = False
+            group_size = 2
+            
+            generate_summary_boxplot(X, Y, labels, barlabels, xlabels, ylabel, title, filename, ylimit, xlabel, Z, override_plotsize, group_size)
+        """
+
+        for resolution in (192, 400):
+            fname = f'out_data_robustness_{resolution}.csv'
+            with open(fname, 'w') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Subject', 'Plugin', 'nanmean', 'nanmedian', 'nanstd'])
+                grouped_dropouts_by_subject[192, 1, 'Detector2DESFnetPlugin']
+                for subject in SUBJECTS:
+                    Native = grouped_dropouts_by_subject[resolution, subject, 'vanilla']
+                    EllSeg = grouped_dropouts_by_subject[resolution, subject, 'Detector2DRITnetEllsegV2AllvonePlugin']
+                    ESFnet = grouped_dropouts_by_subject[resolution, subject, 'Detector2DESFnetPlugin']
+                    ESFnetEmbeddedPupil = grouped_dropouts_by_subject[resolution, subject, 'Detector2DESFnetEmbeddedPlugin']
+                    RITnetPupil = grouped_dropouts_by_subject[resolution, subject, 'Detector2DRITnetPupilPlugin']
+                    EllSegEmbeddedIris = grouped_dropouts_by_subject[resolution, subject, 'Detector2DRITnetEllsegV2AllvoneEmbeddedIrisPlugin']
+                    EllSegEmbeddedPupil = grouped_dropouts_by_subject[resolution, subject, 'Detector2DRITnetEllsegV2AllvoneEmbeddedPlugin']
+                    writer.writerow([subject, 'Native',np.nanmean(Native),np.nanmedian(Native),np.nanstd(Native)])
+                    writer.writerow([subject, 'EllSeg',np.nanmean(EllSeg),np.nanmedian(EllSeg),np.nanstd(EllSeg)])
+                    writer.writerow([subject, 'EllSeg (Embedded Pupil)',np.nanmean(EllSegEmbeddedPupil),np.nanmedian(EllSegEmbeddedPupil),np.nanstd(EllSegEmbeddedPupil)])
+                    writer.writerow([subject, 'EllSeg (Embedded Iris)',np.nanmean(EllSegEmbeddedIris),np.nanmedian(EllSegEmbeddedIris),np.nanstd(EllSegEmbeddedIris)])
+                    writer.writerow([subject, 'ESFnet',np.nanmean(ESFnet),np.nanmedian(ESFnet),np.nanstd(ESFnet)])
+                    writer.writerow([subject, 'ESFnet (Embedded Pupil)',np.nanmean(ESFnetEmbeddedPupil),np.nanmedian(ESFnetEmbeddedPupil),np.nanstd(ESFnetEmbeddedPupil)])
+                    writer.writerow([subject, 'RITnet (Pupil)',np.nanmean(RITnetPupil),np.nanmedian(RITnetPupil),np.nanstd(RITnetPupil)])
+
+        for resolution in (None, 192, 400):
+            if resolution is None:
+                fname = 'out_data.csv'
+            else:
+                fname = f'out_data_{resolution}.csv'
+            with open(fname, 'w') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Subject', 'Plugin', 'nanmean', 'nanmedian', 'nanstd'])
+                for subject in SUBJECTS:
+                    if resolution is None:
+                        Native = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'vanilla') &\
+                            (pd_analysis_acc['subject'] == subject)
+                        ]['accuracy-error'].to_numpy())
+                        EllSeg = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'Detector2DRITnetEllsegV2AllvonePlugin') &\
+                            (pd_analysis_acc['subject'] == subject)
+                        ]['accuracy-error'].to_numpy())
+                        ESFnet = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'Detector2DESFnetPlugin') &\
+                            (pd_analysis_acc['subject'] == subject)
+                        ]['accuracy-error'].to_numpy())
+                        ESFnetEmbeddedPupil = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'Detector2DESFnetEmbeddedPlugin') &\
+                            (pd_analysis_acc['subject'] == subject)
+                        ]['accuracy-error'].to_numpy())
+                        RITnetPupil = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'Detector2DRITnetPupilPlugin') &\
+                            (pd_analysis_acc['subject'] == subject)
+                        ]['accuracy-error'].to_numpy())
+                        EllSegEmbeddedIris = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'Detector2DRITnetEllsegV2AllvoneEmbeddedIrisPlugin') &\
+                            (pd_analysis_acc['subject'] == subject)
+                        ]['accuracy-error'].to_numpy())
+                        EllSegEmbeddedPupil = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'Detector2DRITnetEllsegV2AllvoneEmbeddedPlugin') &\
+                            (pd_analysis_acc['subject'] == subject)
+                        ]['accuracy-error'].to_numpy())
+                    else:
+                        Native = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'vanilla') &\
+                            (pd_analysis_acc['subject'] == subject) &\
+                            (pd_analysis_acc['resolution'] == resolution)
+                        ]['accuracy-error'].to_numpy())
+                        EllSeg = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'Detector2DRITnetEllsegV2AllvonePlugin') &\
+                            (pd_analysis_acc['subject'] == subject) &\
+                            (pd_analysis_acc['resolution'] == resolution)
+                        ]['accuracy-error'].to_numpy())
+                        ESFnet = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'Detector2DESFnetPlugin') &\
+                            (pd_analysis_acc['subject'] == subject) &\
+                            (pd_analysis_acc['resolution'] == resolution)
+                        ]['accuracy-error'].to_numpy())
+                        ESFnetEmbeddedPupil = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'Detector2DESFnetEmbeddedPlugin') &\
+                            (pd_analysis_acc['subject'] == subject) &\
+                            (pd_analysis_acc['resolution'] == resolution)
+                        ]['accuracy-error'].to_numpy())
+                        RITnetPupil = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'Detector2DRITnetPupilPlugin') &\
+                            (pd_analysis_acc['subject'] == subject) &\
+                            (pd_analysis_acc['resolution'] == resolution)
+                        ]['accuracy-error'].to_numpy())
+                        EllSegEmbeddedIris = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'Detector2DRITnetEllsegV2AllvoneEmbeddedIrisPlugin') &\
+                            (pd_analysis_acc['subject'] == subject) &\
+                            (pd_analysis_acc['resolution'] == resolution)
+                        ]['accuracy-error'].to_numpy())
+                        EllSegEmbeddedPupil = mean_subarrays(pd_analysis_acc.loc[
+                            (pd_analysis_acc['plugin'] == 'Detector2DRITnetEllsegV2AllvoneEmbeddedPlugin') &\
+                            (pd_analysis_acc['subject'] == subject) &\
+                            (pd_analysis_acc['resolution'] == resolution)
+                        ]['accuracy-error'].to_numpy())
+                    writer.writerow([subject, 'Native',np.nanmean(Native),np.nanmedian(Native),np.nanstd(Native)])
+                    writer.writerow([subject, 'EllSeg',np.nanmean(EllSeg),np.nanmedian(EllSeg),np.nanstd(EllSeg)])
+                    writer.writerow([subject, 'EllSeg (Embedded Pupil)',np.nanmean(EllSegEmbeddedPupil),np.nanmedian(EllSegEmbeddedPupil),np.nanstd(EllSegEmbeddedPupil)])
+                    writer.writerow([subject, 'EllSeg (Embedded Iris)',np.nanmean(EllSegEmbeddedIris),np.nanmedian(EllSegEmbeddedIris),np.nanstd(EllSegEmbeddedIris)])
+                    writer.writerow([subject, 'ESFnet',np.nanmean(ESFnet),np.nanmedian(ESFnet),np.nanstd(ESFnet)])
+                    writer.writerow([subject, 'ESFnet (Embedded Pupil)',np.nanmean(ESFnetEmbeddedPupil),np.nanmedian(ESFnetEmbeddedPupil),np.nanstd(ESFnetEmbeddedPupil)])
+                    writer.writerow([subject, 'RITnet (Pupil)',np.nanmean(RITnetPupil),np.nanmedian(RITnetPupil),np.nanstd(RITnetPupil)])
+
+        """
+        X = mean_subarrays(pd_analysis_prec.loc[
+            (pd_analysis_prec['plugin'] == 'vanilla')
+        ]['precision-error'].to_numpy())
+        Y = mean_subarrays(pd_analysis_prec.loc[
+            (pd_analysis_prec['plugin'] == nn_names[0])
+        ]['precision-error'].to_numpy())
+        labels = np.concatenate((["Native"], [xlabel_dict[k] for k in nn_names]))
+        barlabels = np.concatenate((["Native"], [barlabel_dict[k] for k in nn_names]))
+        #xlabels = ['Native', 'EllSeg', 'ESFnet', 'RITnet Pupil']
+        xlabels = np.concatenate((["Native"], [xlabel_dict[k] for k in nn_names]))
+        ylabel = 'Precision Error (degrees)'
+        title = 'Gaze Precision Errors Across Neural Networks'
+        filename = f'{figout_loc}Generalized Precision TRUE.png'
+        ylimit = None
+        xlabel = 'Method'
+        Z = [mean_subarrays(pd_analysis_prec.loc[
+            (pd_analysis_prec['plugin'] == k)
+        ]['precision-error'].to_numpy()) for k in nn_names[1:]]
+        override_plotsize = False
+        group_size = 2
+        
+        generate_summary_boxplot(X, Y, labels, barlabels, xlabels, ylabel, title, filename, ylimit, xlabel, Z, override_plotsize, group_size)
+        """
+
+        for resolution in (None, 192, 400):
+            if resolution is None:
+                fname = 'out_data_precision.csv'
+            else:
+                fname = f'out_data_precision_{resolution}.csv'
+            with open(fname, 'w') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Subject', 'Plugin', 'nanmean', 'nanmedian', 'nanstd'])
+                for subject in SUBJECTS:
+                    if resolution is None:
+                        Native = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'vanilla') &\
+                            (pd_analysis_prec['subject'] == subject)
+                        ]['precision-error'].to_numpy())
+                        EllSeg = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'Detector2DRITnetEllsegV2AllvonePlugin') &\
+                            (pd_analysis_prec['subject'] == subject)
+                        ]['precision-error'].to_numpy())
+                        ESFnet = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'Detector2DESFnetPlugin') &\
+                            (pd_analysis_prec['subject'] == subject)
+                        ]['precision-error'].to_numpy())
+                        ESFnetEmbeddedPupil = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'Detector2DESFnetEmbeddedPlugin') &\
+                            (pd_analysis_prec['subject'] == subject)
+                        ]['precision-error'].to_numpy())
+                        RITnetPupil = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'Detector2DRITnetPupilPlugin') &\
+                            (pd_analysis_prec['subject'] == subject)
+                        ]['precision-error'].to_numpy())
+                        EllSegEmbeddedIris = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'Detector2DRITnetEllsegV2AllvoneEmbeddedIrisPlugin') &\
+                            (pd_analysis_prec['subject'] == subject)
+                        ]['precision-error'].to_numpy())
+                        EllSegEmbeddedPupil = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'Detector2DRITnetEllsegV2AllvoneEmbeddedPlugin') &\
+                            (pd_analysis_prec['subject'] == subject)
+                        ]['precision-error'].to_numpy())
+                    else:
+                        Native = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'vanilla') &\
+                            (pd_analysis_prec['subject'] == subject) &\
+                            (pd_analysis_prec['resolution'] == resolution)
+                        ]['precision-error'].to_numpy())
+                        EllSeg = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'Detector2DRITnetEllsegV2AllvonePlugin') &\
+                            (pd_analysis_prec['subject'] == subject) &\
+                            (pd_analysis_prec['resolution'] == resolution)
+                        ]['precision-error'].to_numpy())
+                        ESFnet = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'Detector2DESFnetPlugin') &\
+                            (pd_analysis_prec['subject'] == subject) &\
+                            (pd_analysis_prec['resolution'] == resolution)
+                        ]['precision-error'].to_numpy())
+                        ESFnetEmbeddedPupil = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'Detector2DESFnetEmbeddedPlugin') &\
+                            (pd_analysis_prec['subject'] == subject) &\
+                            (pd_analysis_prec['resolution'] == resolution)
+                        ]['precision-error'].to_numpy())
+                        RITnetPupil = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'Detector2DRITnetPupilPlugin') &\
+                            (pd_analysis_prec['subject'] == subject) &\
+                            (pd_analysis_prec['resolution'] == resolution)
+                        ]['precision-error'].to_numpy())
+                        EllSegEmbeddedIris = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'Detector2DRITnetEllsegV2AllvoneEmbeddedIrisPlugin') &\
+                            (pd_analysis_prec['subject'] == subject) &\
+                            (pd_analysis_prec['resolution'] == resolution)
+                        ]['precision-error'].to_numpy())
+                        EllSegEmbeddedPupil = mean_subarrays(pd_analysis_prec.loc[
+                            (pd_analysis_prec['plugin'] == 'Detector2DRITnetEllsegV2AllvoneEmbeddedPlugin') &\
+                            (pd_analysis_prec['subject'] == subject) &\
+                            (pd_analysis_prec['resolution'] == resolution)
+                        ]['precision-error'].to_numpy())
+                    writer.writerow(['SUBJECT {}'.format(subject)])
+                    writer.writerow(['Native',np.nanmean(Native),np.nanmedian(Native),np.nanstd(Native)])
+                    writer.writerow(['EllSeg',np.nanmean(EllSeg),np.nanmedian(EllSeg),np.nanstd(EllSeg)])
+                    writer.writerow(['EllSeg (Embedded Pupil)',np.nanmean(EllSegEmbeddedPupil),np.nanmedian(EllSegEmbeddedPupil),np.nanstd(EllSegEmbeddedPupil)])
+                    writer.writerow(['RITnet (Embedded Iris)',np.nanmean(EllSegEmbeddedIris),np.nanmedian(EllSegEmbeddedIris),np.nanstd(EllSegEmbeddedIris)])
+                    writer.writerow(['ESFnet',np.nanmean(ESFnet),np.nanmedian(ESFnet),np.nanstd(ESFnet)])
+                    writer.writerow(['ESFnet (Embedded Pupil)',np.nanmean(ESFnetEmbeddedPupil),np.nanmedian(ESFnetEmbeddedPupil),np.nanstd(ESFnetEmbeddedPupil)])
+                    writer.writerow(['RITnet (Pupil)',np.nanmean(RITnetPupil),np.nanmedian(RITnetPupil),np.nanstd(RITnetPupil)])
+        print("All done.")
+        exit()
+        
 
     try:
         # int name
@@ -844,7 +2227,7 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
     output_grids_df.to_csv('output_csv.csv')
     #print(output_grids_df)
     #exit()
-    subjects = [2, 3, 5, 6, 7, 8, 9, 10, 11]
+    subjects = SUBJECTS[1:]#[2, 3, 5, 6, 7, 8, 9, 10, 11]
 
     subject_labels = ["Sub1Vanilla", "Sub1EllSeg"]
     for subj_num in subjects:
@@ -1151,7 +2534,7 @@ def detect_non_saccads(gazeDataFolder, specificExport, label, session, color, ax
     plt.ylim([-40, 40])
     plt.scatter(plot_az, plot_el, s=0.5)
     #fig.savefig('./out_disp{}_dur{}_{}.png'.format(DISPERSION_THRESHOLD, DURATION_THRESHOLD, label))
-    fig.savefig('./figOut/Velocity/out_{}_{}.png'.format(subID, label))
+    fig.savefig(f'{figout_loc}Velocity/out_{subID}_{label}.png')
     plt.clf()
     plt.close(fig)
     return
@@ -1224,7 +2607,7 @@ def detect_non_saccads(gazeDataFolder, specificExport, label, session, color, ax
         )
     )
     fig = go.Figure(data=traces, layout=layout)
-    fig.write_html('./figOut/HTML/out_{}_{}.html'.format(subID, label))
+    fig.write_html(f'{figout_loc}HTML/out_{subID}_{label}.html')
 
     DISPERSION_THRESHOLD = 1.5  # I-DT dispersion threshold (degrees)
     DURATION_THRESHOLD = 0.2  # I-DT duration threshold (seconds)
@@ -1316,7 +2699,7 @@ def detect_non_saccads(gazeDataFolder, specificExport, label, session, color, ax
     plt.ylim([-40, 40])
     plt.scatter(plot_az, plot_el, s=0.5)
     #fig.savefig('./out_disp{}_dur{}_{}.png'.format(DISPERSION_THRESHOLD, DURATION_THRESHOLD, label))
-    fig.savefig('./figOut/Velocity/out_fil_{}_mean{}_{}.png'.format(subID, round(np.mean(newthing), 2), label))
+    fig.savefig(f'{figout_loc}Velocity/out_fil_{subID}_mean{round(np.mean(newthing), 2)}_{label}.png')
 
     plt.clf()
     plt.close(fig)
@@ -1336,7 +2719,7 @@ def detect_non_saccads(gazeDataFolder, specificExport, label, session, color, ax
     plt.ylim([-40, 40])
     plt.scatter(plot_az, plot_el, s=0.5)
     #fig.savefig('./out_disp{}_dur{}_{}.png'.format(DISPERSION_THRESHOLD, DURATION_THRESHOLD, label))
-    fig.savefig('./figOut/Velocity/out_fil_{}_{}_CalibOverlap.png'.format(subID, label))
+    fig.savefig(f'{figout_loc}Velocity/out_fil_{subID}_{label}_CalibOverlap.png')
     
     plt.clf()
     plt.close(fig)
@@ -1350,7 +2733,7 @@ def detect_non_saccads(gazeDataFolder, specificExport, label, session, color, ax
     plt.ylim([-40, 40])
     plt.scatter(plot_az, plot_el, s=0.5)
     #fig.savefig('./out_disp{}_dur{}_{}.png'.format(DISPERSION_THRESHOLD, DURATION_THRESHOLD, label))
-    fig.savefig('./figOut/Velocity/out_fil_{}_{}_AssessOverlap.png'.format(subID, label))
+    fig.savefig(f'{figout_loc}Velocity/out_fil_{subID}_{label}_AssessOverlap.png')
     plt.close(fig)
     
     #exit()
@@ -1418,7 +2801,10 @@ def generate_box_graph(X, Y, labels, barlabels, ylabel, title, filename, ylimit=
     
     for i in range(0, len(X)):
         # boxplot pair
-        bp = ax.boxplot([X[i][~np.isnan(X[i])], Y[i][~np.isnan(Y[i])], *[z[i][~np.isnan(z[i])] for z in Z]], positions = [i*(num_boxes+1)+I for I in range(num_boxes)], widths = 0.6, showfliers=False)
+        bpX = X[i][~np.isnan(X[i])]
+        bpY = Y[i][~np.isnan(Y[i])]
+        bpZ = [z[i][~np.isnan(z[i])] for z in Z]
+        bp = ax.boxplot([bpX, bpY, *bpZ], positions = [i*(num_boxes+1)+I for I in range(num_boxes)], widths = 0.6, showfliers=False)
         boxplots.append(bp)
         setBoxColors(bp, color_count=num_boxes)
         

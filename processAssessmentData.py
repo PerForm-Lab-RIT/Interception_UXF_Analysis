@@ -27,7 +27,19 @@ logging.basicConfig(level=logging.INFO, format=fmt)
 logger = logging.getLogger(__name__)
 
 def calibAssessment(sessionDictIn,saveDir = 'figout/', confidenceThresh = False, title="", show_filtered_out=False, override_to_2d=False):
-    
+    #if override_to_2d:
+    #    ball_catching = False
+    #    if ('processedExp' in sessionDictIn) and (('ballPos','x') in sessionDictIn):
+    #        ball_catching = True
+    #else:
+    #    # !!!!! This doesn't use the binocular model -- it averages up the monocular models!
+    #    sessionDictIn = ev.calcCyclopean(sessionDictIn, 'processedCalib')
+    #    try:
+    #        sessionDictIn = ev.calcCyclopean(sessionDictIn, 'processedExp')
+    #        ball_catching = True
+    #    except KeyError:
+    #        ball_catching = False
+    #    sessionDictIn = ev.calcCyclopean(sessionDictIn, 'processedSequence')
     sessionDictIn = ev.calcCyclopean(sessionDictIn, 'processedCalib')
     try:
         sessionDictIn = ev.calcCyclopean(sessionDictIn, 'processedExp')
@@ -113,10 +125,9 @@ def processAllData(confidenceThresh=False,doNotLoad = True, saveDir = 'figOut/',
     allSessionData = []
 
     dataFolderList = []
-    [dataFolderList.append(name) for name in os.listdir("Data/") if name[0] is not '.']
+    [dataFolderList.append(name) for name in os.listdir("Data/") if ((name[0] is not '.' and (name[0:9] == "_Pipeline")))]
 
     for subNum, subString in enumerate(dataFolderList):
-
         # For each export from pupil labs
         #pupilLabsExportFolderList = ld.findPupilLabsExports(subString)
 
@@ -129,7 +140,6 @@ def processAllData(confidenceThresh=False,doNotLoad = True, saveDir = 'figOut/',
                 #sessionDict = ld.unpackSession(subNum, exportFolderString, doNotLoad=doNotLoad)
                 sessionDict = ld.unpackSession(subNum, load_realtime_ref_data, doNotLoad=doNotLoad, specificExport=exportFolderString)
 
-                
                 # saveDir = 'figOut/{0}_{1}/{0}_{1}'.format(subString, exportFolderString)
                 currSaveDir = saveDir+subString+"/"
                 try:

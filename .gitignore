@@ -3,14 +3,11 @@ DataBackup/
 Figures/
 figOut/
 allSessionDataSTORAGE/
-DataARIANNA/
-DataCB/
-DataExcluded/
-DataPARTIAL/
-DataTEST/
+Data*/
 ZeroWorldIntrinsicsData/
 sessionFiles.pickle
 allSessionData.pickle
+allSessionData*.pickle
 *.png
 *.html
 *.csv

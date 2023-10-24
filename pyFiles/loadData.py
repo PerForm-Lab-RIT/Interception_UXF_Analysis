@@ -35,7 +35,7 @@ def getSubjectSubFolders(subNum,printSessionID=False):
 
     # Get folder/filenames
     dataParentFolderList = []
-    [dataParentFolderList.append(name) for name in os.listdir("Data/") if name[0] is not '.']
+    [dataParentFolderList.append(name) for name in os.listdir("Data/") if ((name[0] is not '.' and (name[0:9] == "_Pipeline")))]
     dataFolder = "Data/" + dataParentFolderList[subNum] + '/'
 
     if printSessionID:
@@ -193,6 +193,8 @@ def processCalibSequence(dataFolder, load_realtime_ref_data, specificExport=None
     return dictOut
     
 
+rgd_lens = []
+
 def processTrial(dataFolder, trialResults, numTrials = False, specificExport=None):
     '''
     This function loads in the raw gaze data for a trial and the raw unity data for a trial.
@@ -313,6 +315,12 @@ def processTrial(dataFolder, trialResults, numTrials = False, specificExport=Non
     lastIdx = list(map(lambda i: i> float(lastTS), gazePositionsDF['pupilTimestamp'])).index(True)
     rawGazeData = gazePositionsDF.loc[firstIdx:lastIdx]
     
+    if len(rgd_lens) < trialResults['trial_num']:
+        rgd_lens.append([])
+    rgd_lens[trialResults['trial_num']-1].append((f"({float(firstTS)} - {float(lastTS)})", len(rawGazeData)))
+    #print(rgd_lens[trialResults['trial_num']-1])
+    #print(len(rawGazeData))
+    #exit()
     # # Drop data below the confidence level
     # filteredGazeData = rawGazeData.reset_index().drop(np.where(rawGazeData['confidence'] < gazeConfidenceThreshold )[0])
     
@@ -374,7 +382,7 @@ def unpackSession(subNum, load_realtime_ref_data, doNotLoad = False, specificExp
 
     # Get folder/filenames
     dataFolderList = []
-    [dataFolderList.append(name) for name in os.listdir("Data/") if name[0] != '.']
+    [dataFolderList.append(name) for name in os.listdir("Data/") if ((name[0] is not '.' and (name[0:9] == "_Pipeline")))]
 
     for i, name in enumerate(dataFolderList):
             if i == subNum:
@@ -515,7 +523,7 @@ if __name__ == "__main__":
     # Remember to set loadParsedData, loadProcessedData.
 
     dataFolderList = []
-    [dataFolderList.append(name) for name in os.listdir("Data/") if name[0] != '.']
+    [dataFolderList.append(name) for name in os.listdir("Data/") if ((name[0] is not '.' and (name[0:9] == "_Pipeline")))]
 
     for i, name in enumerate(dataFolderList):
         print(str(i) + ': ' + name )
