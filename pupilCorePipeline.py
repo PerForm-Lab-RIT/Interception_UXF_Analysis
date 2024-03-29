@@ -579,13 +579,13 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
             pd_prec_constructor
         )
         np.set_printoptions(threshold=sys.maxsize)
-        pd_analysis_acc.to_csv('analysis_accuracy_pd.csv')
-        pd_analysis_prec.to_csv('analysis_precision_pd.csv')
+        pd_analysis_acc.to_csv(f'./{figout_loc}/analysis_accuracy_pd.csv')
+        pd_analysis_prec.to_csv(f'./{figout_loc}/analysis_precision_pd.csv')
     else:
         def converter(instr):
             return np.fromstring(instr[1:-1], sep=' ').astype(np.float32)
-        pd_analysis_acc = pd.read_csv('analysis_accuracy_pd.csv', converters={'accuracy-error': converter})
-        pd_analysis_prec = pd.read_csv('analysis_precision_pd.csv', converters={'precision-error': converter})
+        pd_analysis_acc = pd.read_csv(f'./{figout_loc}/analysis_accuracy_pd.csv', converters={'accuracy-error': converter})
+        pd_analysis_prec = pd.read_csv(f'./{figout_loc}/analysis_precision_pd.csv', converters={'precision-error': converter})
 
     ANOVA = False
     if ANOVA:
@@ -661,6 +661,15 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
             np.nanmean(P), np.nanstd(P), 2*np.nanstd(P), np.nanmean(P) + 2*np.nanstd(P)
         ))
         
+        plt.figure(figsize=(6.4, 2.8))
+        plt.plot(list(range(0, 50)), [100.0 - (100*np.count_nonzero(np.where(P >= i, 1, 0)) / len(P)) for i in range(0, 50)], '-o', mfc='none')
+        plt.title("Data Preserved Under Different Dropout Thresholds")
+        plt.xlabel("Dropout Threshold (Degrees)")
+        plt.ylabel("Percentage of Data Under Threshold")
+        plt.grid()
+        plt.savefig("plotted.png", bbox_inches='tight')
+        #exit()
+
         print("Data dropped: {:.3f}% dropout, {:.3f} mean, {:.3f} std (data-driven)".format(
             100*np.count_nonzero(np.where(P >= gaussian_thresh, 1, 0)) / len(P),
             np.nanmean(P[P < gaussian_thresh]),
@@ -1021,6 +1030,16 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
         plt.close()
 
         # ---------- SUMMARY DATA FOR RESOLUTIONS 192 AND 400 ----------
+        from matplotlib.ticker import FuncFormatter
+        plt.style.use('ggplot')
+        
+        def deg_suffixer(x, pos):
+            return f'{int(x)}°' if int(x) == x else f'{x}°'
+        deg_formatter = FuncFormatter(deg_suffixer)
+        def percent_suffixer(x, pos):
+            return f'{int(x)}%' if int(x) == x else f'{x}%'
+        percent_formatter = FuncFormatter(percent_suffixer)
+
         fig192, axes192 = plt.subplots(1, 3, figsize=(16, 4))
         ax192_1, ax192_2, ax192_3 = axes192
         fig400, axes400 = plt.subplots(1, 3, figsize=(16, 4))
@@ -1107,21 +1126,28 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
                 sns.lineplot(x=X, y=Y, ax=ax, markers=True, label=label, color=colors[i-1] if i > 0 else 'blue', marker='o')
                 i += 1
 
-            ax.set_title("Robustness Error Across Eccentricities ({}x{})".format(resolution, resolution))
+            #ax.set_title("Dropout Rate", pad=20)
             ax.set_xlabel("Eccentricity")
-            ax.set_ylabel("Dropout Rate (percentage)")
+            ax.set_ylabel("Dropout Rate")
             ax.set_xticks((0.0, 10.0, 15.0, 20.0))
+            ax.yaxis.set_major_formatter(percent_formatter)
+            ax.xaxis.set_major_formatter(deg_formatter)
             #plt.xlim(0, 12)
             #plt.ylim(0, 19 if resolution == 192 else 12.5)
-            if resolution == 192:
-                ax.set_ylim(0, 23)
+            if figout_loc[-3:] == '2d/':
+                if resolution == 192:
+                    ax.set_ylim(0, 13)
+                else:
+                    ax.set_ylim(0, 25)
             else:
-                ax.set_ylim(0, 23)
-            ax.legend()
+                if resolution == 192:
+                    ax.set_ylim(0, 20)
+                else:
+                    ax.set_ylim(0, 30)
             for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
                         ax.get_xticklabels() + ax.get_yticklabels() + ax.get_legend().get_texts()):
                 item.set_fontsize(FONT_SIZE)
-
+            ax.legend().remove()
             # ----- ACCURACY -----
             i = 0
             if resolution == 192:
@@ -1140,17 +1166,28 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
                 sns.lineplot(x=acc_bins[method], y=eccentricity_accs[method], ax=ax, markers=True, label=label, color=colors[i-1] if i > 0 else 'blue', marker='o')
                 i += 1
 
-            ax.set_title("Accuracy Error Across Eccentricities ({}x{})".format(resolution, resolution))
+            #ax.set_title("Accuracy Error", pad=20)
+            ax.set_title(f'{resolution}x{resolution}px ({"Feature-Based" if figout_loc[-3:] == "2d/" else "3D Model-Based"})', pad=(22 if figout_loc[-3:] == "2d/"  else 0))
             ax.set_xlabel("Eccentricity")
-            ax.set_ylabel("Accuracy Error (degrees)")
+            ax.set_ylabel("Accuracy Error")
             ax.set_xticks((0.0, 10.0, 15.0, 20.0))
+            ax.yaxis.set_major_formatter(deg_formatter)
+            ax.xaxis.set_major_formatter(deg_formatter)
             #plt.xlim(0, 12)
             #plt.ylim(0, 19 if resolution == 192 else 12.5)
-            if resolution == 192:
-                ax.set_ylim(0, 6)
+            if figout_loc[-3:] == '2d/':
+                if resolution == 192:
+                    ax.set_ylim(0, 5)
+                else:
+                    ax.set_ylim(0, 5)
             else:
-                ax.set_ylim(0, 6)
+                if resolution == 192:
+                    ax.set_ylim(0, 7)
+                else:
+                    ax.set_ylim(0, 7)
             ax.legend().remove()
+            #ax.legend(loc='lower center', bbox_to_anchor=(0.5, 1.05),
+            #    fancybox=True, shadow=True, ncol=7)
             for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
                         ax.get_xticklabels() + ax.get_yticklabels()):
                 item.set_fontsize(FONT_SIZE)
@@ -1171,29 +1208,52 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
                 label = xlabel_dict[method]
                 sns.lineplot(x=acc_bins[method], y=eccentricity_precs[method], ax=ax, markers=True, label=label, color=colors[i-1] if i > 0 else 'blue', marker='o')
                 i += 1
-            ax.set_title("Precision Error Across Eccentricities ({}x{})".format(resolution, resolution))
+            #ax.set_title("Precision Error", pad=20)
             ax.set_xlabel("Eccentricity")
-            ax.set_ylabel("Precision Error (degrees)")
+            ax.set_ylabel("Precision Error")
             ax.set_xticks((0.0, 10.0, 15.0, 20.0))
+            ax.yaxis.set_major_formatter(deg_formatter)
+            ax.xaxis.set_major_formatter(deg_formatter)
             #plt.xlim(0, 12)
             #plt.ylim(0, 19 if resolution == 192 else 12.5)
-            if resolution == 192:
-                ax.set_ylim(0, 6)
+            if figout_loc[-3:] == '2d/':
+                if resolution == 192:
+                    ax.set_ylim(0, 3)
+                else:
+                    ax.set_ylim(0, 7)
             else:
-                ax.set_ylim(0, 6)
+                if resolution == 192:
+                    ax.set_ylim(0, 6)
+                else:
+                    ax.set_ylim(0, 6)
             ax.legend().remove()
+            #ax2 = ax.twinx()
+            #ax2.set_yticks([])
+            #ax2.set_ylabel(f'{resolution}x{resolution}px\n({"Appearance-Based" if figout_loc[-3:] == "2d/" else "Model-Based"})', rotation=-90, labelpad=30)
             for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
                         ax.get_xticklabels() + ax.get_yticklabels()):
                 item.set_fontsize(FONT_SIZE)
+            #for item in ([ax2.title, ax2.xaxis.label, ax2.yaxis.label] +
+            #            ax2.get_xticklabels() + ax2.get_yticklabels()):
+            #    item.set_fontsize(int(FONT_SIZE*1.5))
 
+        handles, labels = ax192_1.get_legend_handles_labels()
+        if figout_loc[-3:] == "2d/":
+            fig192.legend(handles, labels, loc='upper center', fancybox=True, shadow=True, ncol=7, bbox_to_anchor=(0.5, 0.93), prop={'size': 12})
         fig192.tight_layout()
-        fig192.savefig(f'{figout_loc}ecc_separated_192.png', bbox_inches='tight')
+        #fig192.suptitle(f'{192}x{192}px\n({"Appearance-Based" if figout_loc[-3:] == "2d/" else "Model-Based"})', size=20, y=1.05)#), pad=20)
+        fig192.savefig(f'{figout_loc}ecc_separated_192.png')#, bbox_inches='tight')
         fig192.clf()
+        handles, labels = ax400_1.get_legend_handles_labels()
+        if figout_loc[-3:] == "2d/":
+            fig400.legend(handles, labels, loc='upper center', fancybox=True, shadow=True, ncol=7, bbox_to_anchor=(0.5, 0.93), prop={'size': 12})
         fig400.tight_layout()
-        fig400.savefig(f'{figout_loc}ecc_separated_400.png', bbox_inches='tight')
+        #fig400.suptitle(f'{400}x{400}px\n({"Appearance-Based" if figout_loc[-3:] == "2d/" else "Model-Based"})', size=20, y=1.05)#, pad=20)
+        fig400.savefig(f'{figout_loc}ecc_separated_400.png')#, bbox_inches='tight')
         fig400.clf()
         plt.clf()
         #fig.legend
+        exit()
 
         # ---------- Eccentricity-separated accuracy comparison ----------
         for resolution in (None, 192, 400):
@@ -1331,8 +1391,12 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
                     subjidx -= 1
                 i = 0
                 for method in eccentricity_accs_subject[subj]:
+                    if len(eccentricity_accs_subject[subj][method]) > 0:
+                        curr_dropout = 100*np.count_nonzero(np.isnan(eccentricity_accs_subject[subj][method]) | np.where(eccentricity_accs_subject[subj][method] >= DROPOUT, 1, 0)) / len(eccentricity_accs_subject[subj][method])
+                    else:
+                        curr_dropout = 100
                     print("method:{}{}, dropout: {:.2f}%, mean (with 95% CIs): {}, std: {:.2f}".format(' '*(28-len(barlabel_dict[method])), barlabel_dict[method],
-                        100*np.count_nonzero(np.isnan(eccentricity_accs_subject[subj][method]) | np.where(eccentricity_accs_subject[subj][method] >= DROPOUT, 1, 0)) / len(eccentricity_accs_subject[subj][method]),
+                        curr_dropout,
                         mean_confidence_interval(eccentricity_accs_subject[subj][method]), np.nanstd(eccentricity_accs_subject[subj][method])))
                     sns.lineplot(x=acc_bins_subject[subj][method], y=eccentricity_accs_subject[subj][method], markers=True, label=xlabel_dict[method], color=colors[i-1] if i > 0 else 'blue', marker='o', ax=axs[subjidx % 5][int(subjidx / 5)])
                     i += 1
@@ -1902,7 +1966,7 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
         """
 
         for resolution in (192, 400):
-            fname = f'out_data_robustness_{resolution}.csv'
+            fname = f'{figout_loc}/out_data_robustness_{resolution}.csv'
             with open(fname, 'w') as f:
                 writer = csv.writer(f)
                 writer.writerow(['Subject', 'Plugin', 'nanmean', 'nanmedian', 'nanstd'])
@@ -1925,9 +1989,9 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
 
         for resolution in (None, 192, 400):
             if resolution is None:
-                fname = 'out_data.csv'
+                fname = f'{figout_loc}/out_data.csv'
             else:
-                fname = f'out_data_{resolution}.csv'
+                fname = f'{figout_loc}/out_data_{resolution}.csv'
             with open(fname, 'w') as f:
                 writer = csv.writer(f)
                 writer.writerow(['Subject', 'Plugin', 'nanmean', 'nanmedian', 'nanstd'])
@@ -2032,9 +2096,9 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
 
         for resolution in (None, 192, 400):
             if resolution is None:
-                fname = 'out_data_precision.csv'
+                fname = f'{figout_loc}/out_data_precision.csv'
             else:
-                fname = f'out_data_precision_{resolution}.csv'
+                fname = f'{figout_loc}/out_data_precision_{resolution}.csv'
             with open(fname, 'w') as f:
                 writer = csv.writer(f)
                 writer.writerow(['Subject', 'Plugin', 'nanmean', 'nanmedian', 'nanstd'])
@@ -2580,19 +2644,6 @@ def detect_non_saccads(gazeDataFolder, specificExport, label, session, color, ax
         opacity=0.8
     )
     traces.append(eih_slp)
-    
-    #layout = dict(
-    #    dragmode='pan',
-    #    title='Azimuth, Elevation, & Slope',
-    #    width=width,
-    #    height=height,
-    #    yaxis=dict(range=yLim, title='angular position (degrees)'),
-    #    xaxis=dict(
-    #        rangeslider=dict(visible=True),
-    #        range=[0, 500]
-    #        title='time elapsed (seconds)'
-    #    )
-    #)
 
     layout = go.Layout(
         title_text = 'Azimuth, Elevation, & Slope',
@@ -2704,10 +2755,6 @@ def detect_non_saccads(gazeDataFolder, specificExport, label, session, color, ax
     plt.clf()
     plt.close(fig)
 
-    
-    
-    #exit()
-
     #gaze_data_nonsaccade_known_calib = gaze_data_nonsaccade[gaze_data_nonsaccade['pupilTimestamp'].isin(calibration_timestamps)]
     gaze_data_nonsaccade_known_calib = gaze_data_nonsaccade[gaze_data_nonsaccade['world_index'].isin(calibration_worldindices)]
     
@@ -2735,21 +2782,7 @@ def detect_non_saccads(gazeDataFolder, specificExport, label, session, color, ax
     #fig.savefig('./out_disp{}_dur{}_{}.png'.format(DISPERSION_THRESHOLD, DURATION_THRESHOLD, label))
     fig.savefig(f'{figout_loc}Velocity/out_fil_{subID}_{label}_AssessOverlap.png')
     plt.close(fig)
-    
-    #exit()
 
-    #fig = dict(data=traces, layout=layout)
-    #iplot(fig)
-
-    #gazePositionsDF['gaze_normal2'] = gazePositionsDF['az'].pow(2).add(gazePositionsDF['el'].pow(2)).pow(1/2)
-    #gazePositionsDF['velo_normal2'] = gazePositionsDF['gaze_normal2'].diff()
-    #gazePositionsDF['veloFFT_normal2'] = fft(gazePositionsDF['velo_normal2'].fillna(0).values)
-
-    #gazePositionsDFNOTNAN = gazePositionsDF[~gazePositionsDF['velo_normal2'].isna()]
-    #gazePositionsDFNOTNAN = gazePositionsDFNOTNAN.loc[((gazePositionsDFNOTNAN['pupilTimestamp'] > 12120) & (gazePositionsDFNOTNAN['pupilTimestamp'] <= 12130))]
-
-    #gazePositionsDFNOTNAN.plot(x='pupilTimestamp', y='velo_normal2', figsize=(32,14), label=label, color=color, ax=ax, alpha=0.5)
-    #gazePositionsDFNOTNAN.plot(x='pupilTimestamp', y='veloFFT_normal2', figsize=(32,14), label='FFT'+label, ax=ax, alpha=0.5)
 
 def generate_box_graph(X, Y, labels, barlabels, ylabel, title, filename, ylimit=None, xlabel='Subject Number', Z=[], override_plotsize=False, group_size=2):
 
@@ -2762,37 +2795,23 @@ def generate_box_graph(X, Y, labels, barlabels, ylabel, title, filename, ylimit=
     def setBoxColors(bp, color_count=2):
         for i in range(color_count):
             setp(bp['boxes'][i], color=color_list[i])
-            #setp(bp['boxes'][1], color='red')
             
             setp(bp['caps'][i*2], color=color_list[i])
             setp(bp['caps'][i*2+1], color=color_list[i])
-            #setp(bp['caps'][2], color='red')
-            #setp(bp['caps'][3], color='red')
             
             setp(bp['whiskers'][i*2], color=color_list[i])
             setp(bp['whiskers'][i*2+1], color=color_list[i])
-            #setp(bp['whiskers'][2], color='red')
-            #setp(bp['whiskers'][3], color='red')
             try:
                 setp(bp['fliers'][i], color='black')
-                #setp(bp['fliers'][1], color='black')
             except:
                 pass
             setp(bp['medians'][i], color=color_list[i])
-           # setp(bp['medians'][1], color='red')
-
-    # Some fake data to plot
-    A= [[1, 2, 5,],  [7, 2]]
-    B = [[5, 7, 2, 2, 5], [7, 2, 5]]
-    C = [[3,2,5,7], [6, 7, 3]]
 
     if override_plotsize:
         fig = figure(figsize=(20,15))
     else:
         fig = figure()
     ax = axes()
-    #hold(True)
-    
     
     num_boxes = 2 + len(Z)
     Xs = [[] for i in range(num_boxes)]
@@ -2832,18 +2851,7 @@ def generate_box_graph(X, Y, labels, barlabels, ylabel, title, filename, ylimit=
         #h, = plt.plot(Xs[i], mass_medians[i], '-', c=color_list[i])
         plots.append(h)
 
-
-    # second boxplot pair
-    #bp = boxplot(B, positions = [4, 5], widths = 0.6)
-    #setBoxColors(bp)
-
-    # thrid boxplot pair
-    #bp = boxplot(C, positions = [7, 8], widths = 0.6)
-    #setBoxColors(bp)
-
     # set axes limits and labels
-    #xlim(0,9)
-    #ylim(0,9)
     if ylimit:
         ylim(0, ylimit)
     ax.set_xticks(np.arange(len(labels))*(num_boxes+1) + int(np.floor((num_boxes+1)/2)))
@@ -2853,49 +2861,11 @@ def generate_box_graph(X, Y, labels, barlabels, ylabel, title, filename, ylimit=
     ax.set_xlabel(xlabel)
     ax.set_title(title)
     
-    # draw temporary red and blue lines and use them to create a legend
-    #legend_lines = []
-    #for i in range(len(mass_medians)):
-    #    legend_lines.append(ax.plot([1,1], '-', c=color_list[i]))
-    #hB, = ax.plot([1,1],'b-')
-    #hR, = ax.plot([1,1],'r-')
-    
-    #legend((hB, hR),(barlabels[0], barlabels[1]))
-    #hB.set_visible(False)
-    #hR.set_visible(False)
     legend(plots, barlabels)
     if override_plotsize:
         savefig(filename, bbox_inches='tight')
     else:
         savefig(filename)
-    """
-    x = np.arange(len(labels))
-    width = 0.32
-        
-    fig, ax = plt.subplots()
-    ax.set_ylim([0, 4])
-    ax.grid(axis='y')
-    rects1 = ax.boxplot(X, color='blue')
-    rects1 = ax.boxplot(Y, color='orange')
-    
-    text_x = np.arange(len(labels))
-    text_y = [X[i] if X[i] > Y[i] else Y[i]+0.05 for i in range(len(X))]
-    text_label = [np.around(Y[i] - X[i], 4) for i in range(len(X))]
-    
-    #for zx, zy, zp in zip(text_x, text_y, text_label):
-    #    ax.text(zx, zy, zp, color='darkgreen' if zp<0 else 'firebrick')
-    
-    ax.set_ylabel(ylabel)
-    ax.set_xlabel('Subject Number')
-    ax.set_title(title)
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels)
-    ax.legend()
-
-    fig.tight_layout()
-    
-    fig.savefig(filename)
-    """
 
 def generate_errorcomp_graph(X, Y, labels, barlabels, ylabel, title, filename):
     x = np.arange(len(labels))
