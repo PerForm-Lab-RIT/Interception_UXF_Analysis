@@ -258,11 +258,17 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
                     except FileNotFoundError:
                         print("No calibration points found.")
                         continue
+                    except TypeError:
+                        print("No calibration points found.")
+                        continue
                 else:
                     print("Realtime calibration points have not been exported.")
                     try:
                         calibrated_gazer, pupil_data = calibrate_and_validate(reference_data_loc, pupil_data_loc, intrinsics_loc, mapping_method)#, min_calibration_confidence=min_calibration_confidence)
                     except FileNotFoundError:
+                        print("No calibration points found.")
+                        continue
+                    except TypeError:
                         print("No calibration points found.")
                         continue
 
