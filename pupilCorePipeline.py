@@ -1911,65 +1911,6 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
             ]['accuracy-error'].to_numpy()) for k in nn_names[1:]]
         override_plotsize = False
         group_size = 2
-        
-        """
-        generate_summary_boxplot(X, Y, labels, barlabels, xlabels, ylabel, title, filename, ylimit, xlabel, Z, override_plotsize, group_size)
-        # ECCENTRICITY PLOT TEST
-        
-        for eccentricity in (0.0, 10.0, 15.0, 20.0):
-            X = flatten_np(pd_analysis_acc.loc[
-                (pd_analysis_acc['plugin'] == 'vanilla') &\
-                (pd_analysis_acc['eccentricity'] == eccentricity)
-            ]['accuracy-error'].to_numpy())
-            Y = flatten_np(pd_analysis_acc.loc[
-                (pd_analysis_acc['plugin'] == nn_names[0]) &\
-                (pd_analysis_acc['eccentricity'] == eccentricity)
-            ]['accuracy-error'].to_numpy())
-            labels = np.concatenate((["Native"], [xlabel_dict[k] for k in nn_names]))
-            barlabels = np.concatenate((["Native"], [barlabel_dict[k] for k in nn_names_ecc]))
-            #xlabels = ['Native', 'EllSeg', 'ESFnet', 'RITnet Pupil']
-            xlabels = np.concatenate((["Native"], [xlabel_dict[k] for k in nn_names_ecc]))
-            ylabel = 'Accuracy Error (degrees)'
-            title = 'Gaze Accuracy Errors Across Neural Networks (Ecc {})'.format(eccentricity)
-            filename = '{}Generalized Accuracy Ecc {} TRUE.png'.format(figout_loc, eccentricity)
-            ylimit = None
-            xlabel = 'Method'
-            Z = [flatten_np(pd_analysis_acc.loc[
-                (pd_analysis_acc['plugin'] == k) &\
-                (pd_analysis_acc['eccentricity'] == eccentricity)
-            ]['accuracy-error'].to_numpy()) for k in nn_names_ecc[1:]]
-            override_plotsize = False
-            group_size = 2
-            
-            generate_summary_boxplot(X, Y, labels, barlabels, xlabels, ylabel, title, filename, ylimit, xlabel, Z, override_plotsize, group_size)
-
-        for eccentricity in (0.0, 10.0, 15.0, 20.0):
-            X = flatten_np(pd_analysis_prec.loc[
-                (pd_analysis_prec['plugin'] == 'vanilla') &\
-                (pd_analysis_prec['eccentricity'] == eccentricity)
-            ]['precision-error'].to_numpy())
-            Y = flatten_np(pd_analysis_prec.loc[
-                (pd_analysis_prec['plugin'] == nn_names_ecc[0]) &\
-                (pd_analysis_prec['eccentricity'] == eccentricity)
-            ]['precision-error'].to_numpy())
-            labels = np.concatenate((["Native"], [xlabel_dict[k] for k in nn_names]))
-            barlabels = np.concatenate((["Native"], [barlabel_dict[k] for k in nn_names_ecc]))
-            #xlabels = ['Native', 'EllSeg', 'ESFnet', 'RITnet Pupil']
-            xlabels = np.concatenate((["Native"], [xlabel_dict[k] for k in nn_names_ecc]))
-            ylabel = 'Precision Error (degrees)'
-            title = 'Gaze Precision Errors Across Neural Networks (Ecc {})'.format(eccentricity)
-            filename = '{}Generalized Precision Ecc {} TRUE.png'.format(figout_loc, eccentricity)
-            ylimit = None
-            xlabel = 'Method'
-            Z = [flatten_np(pd_analysis_prec.loc[
-                (pd_analysis_prec['plugin'] == k) &\
-                (pd_analysis_prec['eccentricity'] == eccentricity)
-            ]['precision-error'].to_numpy()) for k in nn_names_ecc[1:]]
-            override_plotsize = False
-            group_size = 2
-            
-            generate_summary_boxplot(X, Y, labels, barlabels, xlabels, ylabel, title, filename, ylimit, xlabel, Z, override_plotsize, group_size)
-        """
 
         for resolution in (192, 400):
             fname = f'{figout_loc}/out_data_robustness_{resolution}.csv'
@@ -2074,31 +2015,6 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
                     writer.writerow([subject, 'ESFnet',np.nanmean(ESFnet),np.nanmedian(ESFnet),np.nanstd(ESFnet)])
                     writer.writerow([subject, 'ESFnet (Embedded Pupil)',np.nanmean(ESFnetEmbeddedPupil),np.nanmedian(ESFnetEmbeddedPupil),np.nanstd(ESFnetEmbeddedPupil)])
                     writer.writerow([subject, 'RITnet (Pupil)',np.nanmean(RITnetPupil),np.nanmedian(RITnetPupil),np.nanstd(RITnetPupil)])
-
-        """
-        X = mean_subarrays(pd_analysis_prec.loc[
-            (pd_analysis_prec['plugin'] == 'vanilla')
-        ]['precision-error'].to_numpy())
-        Y = mean_subarrays(pd_analysis_prec.loc[
-            (pd_analysis_prec['plugin'] == nn_names[0])
-        ]['precision-error'].to_numpy())
-        labels = np.concatenate((["Native"], [xlabel_dict[k] for k in nn_names]))
-        barlabels = np.concatenate((["Native"], [barlabel_dict[k] for k in nn_names]))
-        #xlabels = ['Native', 'EllSeg', 'ESFnet', 'RITnet Pupil']
-        xlabels = np.concatenate((["Native"], [xlabel_dict[k] for k in nn_names]))
-        ylabel = 'Precision Error (degrees)'
-        title = 'Gaze Precision Errors Across Neural Networks'
-        filename = f'{figout_loc}Generalized Precision TRUE.png'
-        ylimit = None
-        xlabel = 'Method'
-        Z = [mean_subarrays(pd_analysis_prec.loc[
-            (pd_analysis_prec['plugin'] == k)
-        ]['precision-error'].to_numpy()) for k in nn_names[1:]]
-        override_plotsize = False
-        group_size = 2
-        
-        generate_summary_boxplot(X, Y, labels, barlabels, xlabels, ylabel, title, filename, ylimit, xlabel, Z, override_plotsize, group_size)
-        """
 
         for resolution in (None, 192, 400):
             if resolution is None:
@@ -2377,11 +2293,6 @@ def main(allow_session_loading, skip_pupil_detection, vanilla_only, skip_vanilla
                 Z.append([results_by_eccentricity[key][192][subj_num]['Detector2DRITnetEllsegV2AllvonePlugin']['analysis_precision'] for key in results_by_eccentricity.keys()])
             except KeyError:
                 pass
-        #generate_box_graph(X, Y,
-        #                    results_by_eccentricity.keys(), ('Sub1Vanilla', 'Sub1EllSeg', 'Sub2Vanilla', 'Sub2EllSeg', 'Sub3Vanilla', 'Sub3EllSeg',
-        #                        'Sub5Vanilla', 'Sub5EllSeg', 'Sub6Vanilla', 'Sub6EllSeg',), 'Precision Error (degrees)', '192x192 FULL analysis Precision Errors by Eccentricity (LOWER IS BETTER)',
-        #                    '192x192 FULL Analysis Precision Errors by Eccentricity.png',
-        #                    ylimit=None, xlabel='Eccentricity (degrees)', Z=Z, override_plotsize=True)
         generate_box_graph(X, Y,
                             results_by_eccentricity.keys(), subject_labels, 'Precision Error (degrees)', '192x192 FULL analysis Precision Errors by Eccentricity (LOWER IS BETTER)',
                             '192x192 FULL Analysis Precision Errors by Eccentricity.png',
